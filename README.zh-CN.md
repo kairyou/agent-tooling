@@ -86,10 +86,10 @@ Veloera/AnyRouter-like 与 OpenRouter 网关的余额、额度或套餐用量。
 显示效果示例：
 
 ```text
-# 订阅/套餐额度，例如 Sub2API-like 网关。
+# 订阅/套餐额度。
 warning: [额度] 订阅套餐 | D $0.0/$100 | W $0.0/$300 | Exp 07-08
 
-# 钱包余额，例如 NewAPI/OneAPI/OpenRouter-like 网关。
+# 钱包余额。
 warning: [额度] 钱包余额 | 余额 $362 | 今日 $61.7 | 近30天 $566
 ```
 

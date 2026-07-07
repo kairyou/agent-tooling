@@ -90,10 +90,10 @@ AnyRouter-like, and OpenRouter gateways.
 Output examples:
 
 ```text
-# Subscription / plan quota, for Sub2API-like gateways.
+# Subscription / plan quota.
 warning: [额度] 订阅套餐 | D $0.0/$100 | W $0.0/$300 | Exp 07-08
 
-# Wallet balance, for NewAPI/OneAPI/OpenRouter-like gateways.
+# Wallet balance.
 warning: [额度] 钱包余额 | 余额 $362 | 今日 $61.7 | 近30天 $566
 ```
 
