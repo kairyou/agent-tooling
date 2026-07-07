@@ -107,3 +107,5 @@ comments and existing values.
 - `hooks/common/` contains shared guard logic; agent-specific wiring lives under `hooks/<agent>/`.
 - `statusline/claude/` contains the command-backed Claude statusLine script.
 - The installer marks and removes only the config entries it owns.
+
+Run local checks with `npm test`.

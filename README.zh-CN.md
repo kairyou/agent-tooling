@@ -101,3 +101,5 @@ Claude statusLine 默认显示：
 - `hooks/common/` 放共享 guard 逻辑；各 agent 的接线放在 `hooks/<agent>/`。
 - `statusline/claude/` 放 Claude command-backed statusLine 脚本。
 - 安装器只标记并移除自己写入的配置项。
+
+本地检查运行 `npm test`。
