@@ -49,6 +49,13 @@ function failSoft(message, error) {
   else if (mode !== "refresh") textOut(`${message}${detail}`);
 }
 
+function shortPreview(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+}
+
 async function readJson(path) {
   return JSON.parse(await readFile(path, "utf8"));
 }
@@ -249,11 +256,25 @@ async function requestJson(url, key, options = {}) {
     try {
       json = body ? JSON.parse(body) : {};
     } catch {
+      await debugLog({
+        source: options.name || "usage",
+        url,
+        status: response.status,
+        contentType: response.headers.get("content-type") || "",
+        bodyPreview: shortPreview(body),
+      });
       throw new Error(`${options.name || "usage"} returned non-JSON (${response.status})`);
     }
 
     if (!response.ok) {
       const message = json?.error?.message || json?.message || response.statusText;
+      await debugLog({
+        source: options.name || "usage",
+        url,
+        status: response.status,
+        message,
+        bodyPreview: shortPreview(body),
+      });
       throw new Error(`${options.name || "usage"} failed (${response.status} ${message})`);
     }
 
