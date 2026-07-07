@@ -1,6 +1,6 @@
 # Agent Tooling
 
-面向 Codex、Claude Code 与 opencode 的可复用 agent 工具集。本仓库集中维护 skills、guard hooks、statusline 支持与安装脚本；不同项目可以只安装或同步自己需要的部分。
+面向 Codex、Claude Code 与 opencode 的可复用 agent 工具集。本仓库集中维护 skills、hook 接线、statusline 支持与安装脚本；不同项目可以只安装或同步自己需要的部分。
 
 ## 目录结构
 

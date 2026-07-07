@@ -1,6 +1,6 @@
 # Agent Tooling
 
-Reusable agent tooling for Codex, Claude Code, and opencode. This repository packages skills, guard hooks, statusline support, and install helpers in predictable locations so each project can opt into only what it needs.
+Reusable agent tooling for Codex, Claude Code, and opencode. This repository packages skills, hook integrations, statusline support, and install helpers in predictable locations so each project can opt into only what it needs.
 
 [中文](README.zh-CN.md)
 
