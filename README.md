@@ -87,6 +87,13 @@ The `provider-usage` hook shows the active API provider's balance, quota, or pla
 usage for compatible Sub2API-like, NewAPI/OneAPI/OneHub/DoneHub/Veloera/
 AnyRouter-like, and OpenRouter gateways.
 
+Codex may render the hook message like:
+
+```text
+warning: [额度] Codex 订阅 | D $0.0/$100 | W $0.0/$300 | Exp 07-08
+warning: [额度] 钱包余额 | 余额 $362 | 今日 $61.7 | 近30天 $566
+```
+
 After installing Codex hooks, run `/hooks` inside Codex and approve the
 agent-tooling hooks. After installing the opencode plugin, restart opencode.
 
