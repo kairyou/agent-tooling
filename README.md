@@ -87,10 +87,13 @@ The `provider-usage` hook shows the active API provider's balance, quota, or pla
 usage for compatible Sub2API-like, NewAPI/OneAPI/OneHub/DoneHub/Veloera/
 AnyRouter-like, and OpenRouter gateways.
 
-Codex may render the hook message like:
+Output examples:
 
 ```text
-warning: [额度] Codex 订阅 | D $0.0/$100 | W $0.0/$300 | Exp 07-08
+# Subscription / plan quota, for Sub2API-like gateways.
+warning: [额度] 订阅套餐 | D $0.0/$100 | W $0.0/$300 | Exp 07-08
+
+# Wallet balance, for NewAPI/OneAPI/OpenRouter-like gateways.
 warning: [额度] 钱包余额 | 余额 $362 | 今日 $61.7 | 近30天 $566
 ```
 

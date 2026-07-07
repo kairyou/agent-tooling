@@ -83,10 +83,13 @@ npx -y github:kairyou/agent-tooling guard provider-usage -a codex --uninstall
 `provider-usage` hook 会显示兼容 Sub2API-like、NewAPI/OneAPI/OneHub/DoneHub/
 Veloera/AnyRouter-like 与 OpenRouter 网关的余额、额度或套餐用量。
 
-Codex 里可能显示成：
+显示效果示例：
 
 ```text
-warning: [额度] Codex 订阅 | D $0.0/$100 | W $0.0/$300 | Exp 07-08
+# 订阅/套餐额度，例如 Sub2API-like 网关。
+warning: [额度] 订阅套餐 | D $0.0/$100 | W $0.0/$300 | Exp 07-08
+
+# 钱包余额，例如 NewAPI/OneAPI/OpenRouter-like 网关。
 warning: [额度] 钱包余额 | 余额 $362 | 今日 $61.7 | 近30天 $566
 ```
 
