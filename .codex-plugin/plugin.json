@@ -1,7 +1,7 @@
 {
   "name": "agent-tooling",
   "version": "0.1.0",
-  "description": "Personal and team agent tooling: skills, hooks, statusline snippets, and install helpers",
+  "description": "Reusable agent skills, hooks, statusline tooling, and install helpers for Codex, Claude Code, and opencode",
   "license": "MIT",
   "skills": "./skills/"
 }

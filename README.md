@@ -1,6 +1,6 @@
 # Agent Tooling
 
-Personal and team tooling for coding agents. The repository keeps reusable skills, hook scripts, statusline snippets, and install helpers in predictable locations so each project can opt into only what it needs.
+Reusable agent tooling for Codex, Claude Code, and opencode. This repository packages skills, guard hooks, statusline support, and install helpers in predictable locations so each project can opt into only what it needs.
 
 [中文](README.zh-CN.md)
 
@@ -10,7 +10,7 @@ Personal and team tooling for coding agents. The repository keeps reusable skill
 agent-tooling/
 ├── .claude-plugin/    # Claude Code/plugin ecosystem manifest.
 ├── .codex-plugin/     # Codex plugin manifest.
-├── hooks/             # Hook scripts and config snippets, split by shared logic and agent wiring.
+├── hooks/             # Hook scripts and config fragments, split by shared logic and agent wiring.
 │   ├── common/        # Cross-agent hook logic: guard-rules.mjs + guard-command.mjs (Claude/Codex CLI).
 │   ├── opencode/      # opencode plugin wiring (guard.mjs) that reuses common/ rules.
 │   ├── claude/        # Claude Code hook material (wiring is generated into settings.json).
@@ -19,7 +19,7 @@ agent-tooling/
 ├── skills/            # Reusable Agent Skills for CLI discovery and plugin manifests.
 │   └── workflow/      # Workflow-oriented skills.
 │       └── commit/    # Conventional Commit message skill.
-└── statusline/        # Statusline snippets/templates, grouped by agent.
+└── statusline/        # Statusline scripts/templates, grouped by agent.
     ├── claude/        # Claude command-backed statusLine script.
     └── codex/         # Codex tui.status_line snippet (built-in fields only; no script).
 ```
@@ -33,19 +33,19 @@ agent-tooling/
 List available skills:
 
 ```bash
-npx skills@latest add D:\dev\agent-tooling --list
+npx skills@latest add kairyou/agent-tooling --list
 ```
 
 Install the `commit` skill globally for Codex:
 
 ```bash
-npx skills@latest add D:\dev\agent-tooling -g -a codex --skill commit -y
+npx skills@latest add kairyou/agent-tooling -g -a codex --skill commit -y
 ```
 
 For project-level installs that may be committed to Git, prefer `--copy` over symlinks:
 
 ```bash
-npx skills@latest add D:\dev\agent-tooling --copy -a codex --skill commit -y
+npx skills@latest add kairyou/agent-tooling --copy -a codex --skill commit -y
 ```
 
 ## Installing hooks & statusline
@@ -141,7 +141,7 @@ Codex through the `guard-command.mjs` stdin/stdout CLI, opencode through the
 - `skills/` contains reusable `SKILL.md` capabilities. Projects may install only the skills they need.
 - `npx skills` can discover skills by scanning this layout. Plugin manifests are kept for native plugin ecosystems and should list explicit skill paths when required.
 - `hooks/` and `statusline/` are not auto-loaded by the plugin manifests. Future scripts under `scripts/` should install or sync those files into each agent's expected config location.
-- Keep reusable hook logic in `hooks/common/`. Put Codex and Claude-specific hook wiring, config snippets, and thin wrappers in `hooks/codex/` and `hooks/claude/`.
+- Keep reusable hook logic in `hooks/common/`. Put Codex and Claude-specific hook wiring, config fragments, and thin wrappers in `hooks/codex/` and `hooks/claude/`.
 - **opencode, per capability:**
   - *Skills* — auto-discovered with **zero wiring**. opencode reads `.claude/skills/`,
     `.agents/skills/`, `.opencode/skills/` (project) and the `~/.claude`, `~/.agents`,

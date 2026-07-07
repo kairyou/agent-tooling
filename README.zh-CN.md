@@ -1,6 +1,6 @@
 # Agent Tooling
 
-面向个人和团队的 coding agent 工具仓库。本仓库存放可复用的 skills、hook 脚本、statusline 配置片段和安装脚本；不同项目可以只安装或同步自己需要的部分。
+面向 Codex、Claude Code 与 opencode 的可复用 agent 工具集。本仓库集中维护 skills、guard hooks、statusline 支持与安装脚本；不同项目可以只安装或同步自己需要的部分。
 
 ## 目录结构
 
@@ -31,19 +31,19 @@ agent-tooling/
 查看可用 skills：
 
 ```bash
-npx skills@latest add D:\dev\agent-tooling --list
+npx skills@latest add kairyou/agent-tooling --list
 ```
 
 全局安装 `commit` skill 到 Codex：
 
 ```bash
-npx skills@latest add D:\dev\agent-tooling -g -a codex --skill commit -y
+npx skills@latest add kairyou/agent-tooling -g -a codex --skill commit -y
 ```
 
 如果是项目级安装，且安装结果可能提交到 Git，优先使用 `--copy`，不要提交 symlink：
 
 ```bash
-npx skills@latest add D:\dev\agent-tooling --copy -a codex --skill commit -y
+npx skills@latest add kairyou/agent-tooling --copy -a codex --skill commit -y
 ```
 
 ## 安装 hooks 与 statusline

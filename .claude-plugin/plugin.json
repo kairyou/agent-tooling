@@ -1,6 +1,6 @@
 {
   "name": "agent-tooling",
-  "description": "Personal and team agent tooling: skills, hooks, statusline snippets, and install helpers",
+  "description": "Reusable agent skills, hooks, statusline tooling, and install helpers for Codex, Claude Code, and opencode",
   "skills": [
     "./skills/workflow/commit"
   ]

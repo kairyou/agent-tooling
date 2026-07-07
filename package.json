@@ -2,6 +2,6 @@
   "name": "agent-tooling",
   "version": "0.1.0",
   "private": true,
-  "description": "Personal and team agent tooling",
+  "description": "Reusable agent skills, hooks, statusline tooling, and install helpers",
   "license": "MIT"
 }
