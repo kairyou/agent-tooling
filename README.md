@@ -39,23 +39,27 @@ npx -y skills@latest add kairyou/agent-tooling --list
 Install skills globally:
 
 ```bash
-# Claude Code + Codex
-npx -y skills@latest add kairyou/agent-tooling -g -a claude-code codex --skill commit -y
-
-# All agents supported by skills@latest
-npx -y skills@latest add kairyou/agent-tooling -g -a "*" --skill commit -y
+npx -y skills@latest add kairyou/agent-tooling --skill commit -g -y
 ```
 
 Project-level install:
 
 ```bash
 # Prefer --copy when installed files may be committed to Git.
-npx -y skills@latest add kairyou/agent-tooling --copy -a claude-code codex --skill commit -y
+npx -y skills@latest add kairyou/agent-tooling --skill commit --copy -y
 ```
 
 Pass multiple skills after `--skill`, for example `--skill commit other-skill`.
-Agent names are resolved by `skills@latest`; use `-a "*"` to target every
-supported agent.
+By default, `skills@latest` detects the current agent. Use `-a` only when you
+want to override that:
+
+```bash
+# Claude Code + Codex
+npx -y skills@latest add kairyou/agent-tooling --skill commit -g -a claude-code codex -y
+
+# All agents supported by skills@latest
+npx -y skills@latest add kairyou/agent-tooling --skill commit -g -a "*" -y
+```
 
 ## Installing hooks & statusline
 

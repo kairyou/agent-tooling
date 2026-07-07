@@ -37,22 +37,26 @@ npx -y skills@latest add kairyou/agent-tooling --list
 全局安装 skill：
 
 ```bash
-# Claude Code + Codex
-npx -y skills@latest add kairyou/agent-tooling -g -a claude-code codex --skill commit -y
-
-# 安装到 skills@latest 支持的全部 agent
-npx -y skills@latest add kairyou/agent-tooling -g -a "*" --skill commit -y
+npx -y skills@latest add kairyou/agent-tooling --skill commit -g -y
 ```
 
 项目级安装：
 
 ```bash
 # 如果安装结果可能提交到 Git，优先使用 --copy，不要提交 symlink。
-npx -y skills@latest add kairyou/agent-tooling --copy -a claude-code codex --skill commit -y
+npx -y skills@latest add kairyou/agent-tooling --skill commit --copy -y
 ```
 
 多个 skill 可以跟在 `--skill` 后面，例如 `--skill commit other-skill`。
-agent 名称由 `skills@latest` 解析；用 `-a "*"` 可以安装到它支持的全部 agent。
+默认情况下，`skills@latest` 会检测当前 agent。只有需要覆盖自动检测时才需要 `-a`：
+
+```bash
+# Claude Code + Codex
+npx -y skills@latest add kairyou/agent-tooling --skill commit -g -a claude-code codex -y
+
+# 安装到 skills@latest 支持的全部 agent
+npx -y skills@latest add kairyou/agent-tooling --skill commit -g -a "*" -y
+```
 
 ## 安装 hooks 与 statusline
 
