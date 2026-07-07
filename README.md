@@ -57,21 +57,20 @@ Install hooks and statusline with the repo installer:
 
 ```bash
 # Claude: statusLine + guard
-node scripts/install.mjs -a claude
+node scripts/install.mjs statusline guard -a claude
 
 # Codex: guard
-node scripts/install.mjs -a codex
+node scripts/install.mjs guard -a codex
 
 # opencode: guard plugin
-node scripts/install.mjs -a opencode
+node scripts/install.mjs guard -a opencode
 
 # Multiple agents
-node scripts/install.mjs -a claude codex opencode
+node scripts/install.mjs guard -a claude codex opencode
 
-# Only one capability, preview, or uninstall
-node scripts/install.mjs --only guard
-node scripts/install.mjs --dry-run
-node scripts/install.mjs --uninstall
+# Preview or uninstall
+node scripts/install.mjs guard -a codex --dry-run
+node scripts/install.mjs guard -a codex --uninstall
 ```
 
 Installed capabilities:

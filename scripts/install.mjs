@@ -19,12 +19,11 @@
 // restart to load the plugin.
 //
 // Usage:
-//   node scripts/install.mjs [options]
+//   node scripts/install.mjs <capabilities> [options]
 //
 // Options:
 //   -a, --agent <names>       Target agents: claude | codex | opencode.
 //                             Default: claude.
-//   --only <capabilities>     Only these capabilities: statusline | guard.
 //   --settings <path>         Override the Claude settings.json (for testing).
 //   --codex-hooks <path>      Override the Codex hooks.json (for testing).
 //   --opencode-plugin-dir <p> Override the opencode plugin dir (for testing).
@@ -44,6 +43,7 @@ const META_VERSION = 1;
 const GUARD_SCRIPT = path.join(REPO_ROOT, "hooks", "common", "guard-command.mjs");
 const GUARD_PLUGIN = path.join(REPO_ROOT, "hooks", "opencode", "guard.mjs");
 const ALL_CAPS = ["statusline", "guard"];
+const ALL_AGENTS = ["claude", "codex", "opencode"];
 
 function fwd(p) {
   return p.replace(/\\/g, "/");
@@ -56,7 +56,7 @@ function nodeCmd(absScript) {
 function parseArgs(argv) {
   const opts = {
     agents: [],
-    only: [],
+    capabilities: [],
     settings: null,
     codexHooks: null,
     opencodePluginDir: null,
@@ -65,10 +65,10 @@ function parseArgs(argv) {
     force: false,
     help: false,
   };
-  function readValues(index, option) {
+  function readAgentValues(index, option) {
     const values = [];
     let i = index + 1;
-    while (i < argv.length && !argv[i].startsWith("-")) {
+    while (i < argv.length && ALL_AGENTS.includes(argv[i])) {
       values.push(argv[i]);
       i++;
     }
@@ -83,14 +83,8 @@ function parseArgs(argv) {
     switch (a) {
       case "-a":
       case "--agent": {
-        const parsed = readValues(i, a);
+        const parsed = readAgentValues(i, a);
         opts.agents.push(...parsed.values);
-        i = parsed.next;
-        break;
-      }
-      case "--only": {
-        const parsed = readValues(i, a);
-        opts.only.push(...parsed.values);
         i = parsed.next;
         break;
       }
@@ -103,12 +97,19 @@ function parseArgs(argv) {
       case "-h":
       case "--help": opts.help = true; break;
       default:
-        console.error(`Unknown option: ${a}`);
-        process.exit(2);
+        if (a.startsWith("-")) {
+          console.error(`Unknown option: ${a}`);
+          process.exit(2);
+        }
+        opts.capabilities.push(a);
     }
   }
   if (opts.agents.length === 0) opts.agents = ["claude"];
-  for (const name of opts.only) {
+  if (!opts.help && opts.capabilities.length === 0) {
+    console.error(`Missing capability (available: ${ALL_CAPS.join(", ")})`);
+    process.exit(2);
+  }
+  for (const name of opts.capabilities) {
     if (!ALL_CAPS.includes(name)) {
       console.error(`Unknown capability: ${name} (available: ${ALL_CAPS.join(", ")})`);
       process.exit(2);
@@ -118,7 +119,7 @@ function parseArgs(argv) {
 }
 
 function wants(opts, cap) {
-  return opts.only.length === 0 || opts.only.includes(cap);
+  return opts.capabilities.length === 0 || opts.capabilities.includes(cap);
 }
 
 function readJson(file) {

@@ -55,21 +55,20 @@ npx -y skills@latest add kairyou/agent-tooling --skill commit --copy -y
 
 ```bash
 # Claude：statusLine + guard
-node scripts/install.mjs -a claude
+node scripts/install.mjs statusline guard -a claude
 
 # Codex：guard
-node scripts/install.mjs -a codex
+node scripts/install.mjs guard -a codex
 
 # opencode：guard plugin
-node scripts/install.mjs -a opencode
+node scripts/install.mjs guard -a opencode
 
 # 多个 agent 一起安装
-node scripts/install.mjs -a claude codex opencode
+node scripts/install.mjs guard -a claude codex opencode
 
-# 只装某个能力、预览或卸载
-node scripts/install.mjs --only guard
-node scripts/install.mjs --dry-run
-node scripts/install.mjs --uninstall
+# 预览或卸载
+node scripts/install.mjs guard -a codex --dry-run
+node scripts/install.mjs guard -a codex --uninstall
 ```
 
 已接线能力：
