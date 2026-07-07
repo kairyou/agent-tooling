@@ -2,7 +2,7 @@
 
 Personal and team tooling for coding agents. The repository keeps reusable skills, hook scripts, statusline snippets, and install helpers in predictable locations so each project can opt into only what it needs.
 
-中文版本: [README.zh-CN.md](README.zh-CN.md)
+[中文](README.zh-CN.md)
 
 ## Directory Layout
 
