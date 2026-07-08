@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PROVIDER_SCRIPT = join(ROOT, "lib", "usage.mjs");
+const CODEX_USAGE_HOOK = join(ROOT, "hooks", "codex", "usage-hook.mjs");
 
 async function withServer(handler, fn) {
   const server = http.createServer(handler);
@@ -163,4 +164,76 @@ test("provider usage caches the successful route for a service root", async () =
     assert.equal(cache.routes[base].route, "sub2api-auth-me");
     assert.equal(cache.routes[base].path, "/api/v1/auth/me");
   });
+});
+
+test("Codex usage hook wrapper logs failures and exits successfully", async () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tooling-usage-hook-"));
+  const agentHome = join(temp, "agent");
+  const hookDir = join(agentHome, "hooks", "codex");
+  mkdirSync(hookDir, { recursive: true });
+  copyFileSync(CODEX_USAGE_HOOK, join(hookDir, "usage-hook.mjs"));
+
+  const result = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [join(hookDir, "usage-hook.mjs")], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        AGENT_TOOLING_HOME: agentHome,
+        AGENT_TOOLING_USAGE_HOOK_LOG_BYTES: "1024",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("exit", (status) => {
+      resolve({ status, stdout, stderr });
+    });
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.continue, true);
+  assert.match(payload.systemMessage, /API usage hook failed; see .+usage-hook\.log/);
+
+  const logPath = join(agentHome, "logs", "usage-hook.log");
+  const log = readFileSync(logPath, "utf8");
+  assert.match(log, /missing usage script/);
+});
+
+test("Codex usage hook wrapper caps failure log size", async () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tooling-usage-hook-log-"));
+  const agentHome = join(temp, "agent");
+  const hookDir = join(agentHome, "hooks", "codex");
+  const logDir = join(agentHome, "logs");
+  const logPath = join(logDir, "usage-hook.log");
+  mkdirSync(hookDir, { recursive: true });
+  mkdirSync(logDir, { recursive: true });
+  copyFileSync(CODEX_USAGE_HOOK, join(hookDir, "usage-hook.mjs"));
+  writeFileSync(logPath, `${"x".repeat(5000)}\n`);
+
+  const result = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [join(hookDir, "usage-hook.mjs")], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        AGENT_TOOLING_HOME: agentHome,
+        AGENT_TOOLING_USAGE_HOOK_LOG_BYTES: "1024",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.on("exit", (status) => {
+      resolve({ status });
+    });
+  });
+
+  assert.equal(result.status, 0);
+  assert.ok(statSync(logPath).size < 1600);
+  assert.match(readFileSync(logPath, "utf8"), /log rotated/);
 });

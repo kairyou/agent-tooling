@@ -48,6 +48,7 @@ const SOURCE = {
   guardCommand: path.join(REPO_ROOT, "hooks", "common", "guard-command.mjs"),
   guardRules: path.join(REPO_ROOT, "hooks", "common", "guard-rules.mjs"),
   opencodeGuard: path.join(REPO_ROOT, "hooks", "opencode", "guard.mjs"),
+  codexUsageHook: path.join(REPO_ROOT, "hooks", "codex", "usage-hook.mjs"),
   usageScript: path.join(REPO_ROOT, "lib", "usage.mjs"),
   config: path.join(REPO_ROOT, "config.default.jsonc"),
   claudeStatusline: path.join(REPO_ROOT, "statusline", "claude", "statusline.mjs"),
@@ -56,6 +57,7 @@ const RUNTIME = {
   guardCommand: path.join(INSTALL_ROOT, "hooks", "common", "guard-command.mjs"),
   guardRules: path.join(INSTALL_ROOT, "hooks", "common", "guard-rules.mjs"),
   opencodeGuard: path.join(INSTALL_ROOT, "hooks", "opencode", "guard.mjs"),
+  codexUsageHook: path.join(INSTALL_ROOT, "hooks", "codex", "usage-hook.mjs"),
   usageScript: path.join(INSTALL_ROOT, "lib", "usage.mjs"),
   config: path.join(INSTALL_ROOT, "config.jsonc"),
   claudeStatusline: path.join(INSTALL_ROOT, "statusline", "claude", "statusline.mjs"),
@@ -201,6 +203,7 @@ function installRuntimeAssets(opts) {
     addFile(SOURCE.config, RUNTIME.config, { mergeJsonc: true });
   }
   if (wants(opts, "usage")) {
+    addFile(SOURCE.codexUsageHook, RUNTIME.codexUsageHook);
     addFile(SOURCE.usageScript, RUNTIME.usageScript);
     addFile(SOURCE.config, RUNTIME.config, { mergeJsonc: true });
   }
@@ -366,7 +369,7 @@ function usageEntry() {
     hooks: [
       {
         type: "command",
-        command: `${nodeCmd(RUNTIME.usageScript)} hook --agent codex`,
+        command: nodeCmd(RUNTIME.codexUsageHook),
         timeout: 5,
         statusMessage: "Refreshing API usage",
       },
@@ -379,7 +382,9 @@ function isOurProviderUsageEntry(entry) {
     entry &&
     Array.isArray(entry.hooks) &&
     entry.hooks.some(
-      (h) => typeof h?.command === "string" && /(?:^|[/\\])usage\.mjs(?:["\s]|$)/.test(h.command)
+      (h) =>
+        typeof h?.command === "string" &&
+        /(?:^|[/\\])(?:usage-hook|usage)\.mjs(?:["\s]|$)/.test(h.command)
     )
   );
 }
