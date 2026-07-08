@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -20,10 +20,10 @@ async function withServer(handler, fn) {
   }
 }
 
-async function runProvider({ baseUrl, preset = "auto", config = {} }) {
-  const temp = mkdtempSync(join(tmpdir(), "agent-tooling-provider-"));
-  const codexHome = join(temp, "codex");
-  const agentHome = join(temp, "agent");
+async function runProvider({ baseUrl, preset = "auto", config = {}, codexHome, agentHome }) {
+  const temp = codexHome && agentHome ? "" : mkdtempSync(join(tmpdir(), "agent-tooling-provider-"));
+  codexHome ||= join(temp, "codex");
+  agentHome ||= join(temp, "agent");
   mkdirSync(codexHome, { recursive: true });
   mkdirSync(agentHome, { recursive: true });
   writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ OPENAI_API_KEY: "test-key" }));
@@ -126,5 +126,38 @@ test("provider usage fails open when no compatible usage endpoint exists", async
   }, async (base) => {
     const payload = await runProvider({ baseUrl: `${base}/v1`, preset: "auto" });
     assert.deepEqual(payload, { continue: true });
+  });
+});
+
+test("provider usage caches the successful route for a service root", async () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tooling-provider-cache-"));
+  const codexHome = join(temp, "codex");
+  const agentHome = join(temp, "agent");
+  const seen = [];
+
+  await withServer((req, res) => {
+    seen.push(req.url);
+    if (req.url === "/v1/usage?days=30") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ object: "list", data: [] }));
+      return;
+    }
+    if (req.url === "/api/v1/auth/me") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ code: 0, data: { username: "cached-user", balance: 42 } }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  }, async (base) => {
+    const first = await runProvider({ baseUrl: `${base}/v1`, preset: "auto", codexHome, agentHome });
+    const second = await runProvider({ baseUrl: `${base}/v1`, preset: "auto", codexHome, agentHome });
+    assert.equal(first.systemMessage, "[额度] cached-user | 余额 $42.0");
+    assert.equal(second.systemMessage, "[额度] cached-user | 余额 $42.0");
+    assert.deepEqual(seen, ["/v1/usage?days=30", "/api/v1/auth/me", "/api/v1/auth/me"]);
+
+    const cache = JSON.parse(readFileSync(join(agentHome, "cache", "usage-routes.json"), "utf8"));
+    assert.equal(cache.routes[base].route, "sub2api-auth-me");
+    assert.equal(cache.routes[base].path, "/api/v1/auth/me");
   });
 });

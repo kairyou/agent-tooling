@@ -16,10 +16,12 @@ const AUTH_PATH = join(CODEX_HOME, "auth.json");
 const CODEX_CONFIG_PATH = join(CODEX_HOME, "config.toml");
 const AGENT_CONFIG_PATH = process.env.AGENT_TOOLING_CONFIG || join(AGENT_TOOLING_HOME, "config.jsonc");
 const DEBUG_PATH = join(AGENT_TOOLING_HOME, "logs", "usage-debug.log");
+const ROUTE_CACHE_PATH = join(AGENT_TOOLING_HOME, "cache", "usage-routes.json");
 const REQUEST_TIMEOUT_MS = 5000;
 const DEFAULT_USAGE_DAYS = 30;
 const MAX_USAGE_DAYS = 90;
 const DEFAULT_NEW_API_QUOTA_SCALE = 500000;
+const ROUTE_CACHE_VERSION = 1;
 const SHIELD_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36";
@@ -299,6 +301,21 @@ function serviceRoot(baseUrl) {
   return clean.endsWith("/v1") ? clean.slice(0, -3) : clean;
 }
 
+function usageRouteCacheKey(baseUrl) {
+  try {
+    const url = new URL(cleanBaseUrl(baseUrl));
+    url.hash = "";
+    url.search = "";
+    url.pathname = url.pathname
+      .replace(/\/+$/, "")
+      .replace(/\/api\/v1$/i, "")
+      .replace(/\/v1$/i, "");
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return serviceRoot(baseUrl);
+  }
+}
+
 function joinUrl(baseUrl, path) {
   return `${cleanBaseUrl(baseUrl)}${path.startsWith("/") ? path : `/${path}`}`;
 }
@@ -411,6 +428,44 @@ async function requestJson(url, key, options = {}) {
   throw new Error(`${options.name || "usage"} unavailable`);
 }
 
+async function readRouteCache() {
+  try {
+    const raw = await readTextIfExists(ROUTE_CACHE_PATH);
+    if (!raw.trim()) return { version: ROUTE_CACHE_VERSION, routes: {} };
+    const parsed = JSON.parse(raw);
+    return {
+      version: ROUTE_CACHE_VERSION,
+      routes: parsed?.routes && typeof parsed.routes === "object" ? parsed.routes : {},
+    };
+  } catch {
+    return { version: ROUTE_CACHE_VERSION, routes: {} };
+  }
+}
+
+async function cachedUsageRoute(context) {
+  const cache = await readRouteCache();
+  const key = usageRouteCacheKey(context.baseUrl);
+  const route = cache.routes[key];
+  return route?.route && USAGE_ROUTES[route.route] ? route : null;
+}
+
+async function rememberUsageRoute(context, route, result) {
+  try {
+    const cache = await readRouteCache();
+    const key = usageRouteCacheKey(context.baseUrl);
+    cache.routes[key] = {
+      route: route.id,
+      path: route.path,
+      source: result.source,
+      updatedAt: new Date().toISOString(),
+    };
+    await mkdir(dirname(ROUTE_CACHE_PATH), { recursive: true });
+    await writeFile(ROUTE_CACHE_PATH, `${JSON.stringify(cache, null, 2)}\n`);
+  } catch (error) {
+    await debugLog({ source: "route-cache", error: error.message });
+  }
+}
+
 function apiKeyFor(auth, provider) {
   if (process.env.PROVIDER_USAGE_API_KEY) return process.env.PROVIDER_USAGE_API_KEY;
   if (process.env.SUB2API_API_KEY) return process.env.SUB2API_API_KEY;
@@ -491,6 +546,28 @@ function isWalletUsage(root) {
     planName.includes("钱包") ||
     planName.toLowerCase().includes("wallet") ||
     (pickNumber(root, ["balance"]) !== undefined && !hasSubscriptionLimits(root))
+  );
+}
+
+function hasV1UsageFields(root) {
+  return (
+    hasSubscriptionLimits(root) ||
+    pickNumber(root, [
+      "balance",
+      "remaining",
+      "remain",
+      "available",
+      "hard_limit_usd",
+      "hard_limit",
+      "total_granted",
+      "quota",
+      "total_usage",
+      "used",
+      "usage",
+    ]) !== undefined ||
+    pickNumber(root?.quota, ["limit", "quota", "used", "quota_used", "remaining"]) !== undefined ||
+    pickNumber(root?.usage?.today, ["actual_cost", "cost"]) !== undefined ||
+    (Array.isArray(root?.daily_usage) && root.daily_usage.length > 0)
   );
 }
 
@@ -674,11 +751,12 @@ function formatUsageLine(label, root) {
 // Sub2API and several private OpenAI-compatible gateways expose a lightweight
 // OpenAI-style endpoint at /v1/usage. This is intentionally probed first for
 // generic non-OpenAI base URLs because it does not require a management token.
-async function fetchOpenAiCompatibleUsage(context) {
+async function fetchV1Usage(context) {
   const json = await requestJson(await subscriptionUrl(context.baseUrl), context.key, {
-    name: "OpenAI-compatible usage",
+    name: "v1 usage",
   });
-  return usageResult(context, "openai-compatible-usage", await formatQuota(context.label, json), json);
+  if (!hasV1UsageFields(usageRoot(json))) throw new Error("v1 usage payload has no usage fields");
+  return usageResult(context, "v1-usage", await formatQuota(context.label, json), json);
 }
 
 // NewAPI / OneAPI family, including AnyRouter/AgentRouter-style deployments:
@@ -707,19 +785,14 @@ async function fetchNewApiTokenUsage(context) {
       remaining: remainingForWarning,
     },
     unit: scale ? "USD" : "quota",
-    source: "new-api-token-usage",
+    source: "newapi-token",
     raw: json,
   };
-  return usageResult(
-    context,
-    "new-api-token-usage",
-    await formatNewApiTokenLine(context.label, json),
-    normalized
-  );
+  return usageResult(context, "newapi-token", await formatNewApiTokenLine(context.label, json), normalized);
 }
 
 // NewAPI / OneAPI / OneHub / DoneHub / Veloera panel session endpoint, based on
-// Metapi's platform adapters. This works when PROVIDER_USAGE_API_KEY is a panel
+// Metapi's platform handling. This works when PROVIDER_USAGE_API_KEY is a panel
 // access/session token, or when the site accepts the API key for /api/user/self.
 async function fetchPanelUserSelfUsage(context) {
   const preset = await usagePreset();
@@ -766,8 +839,8 @@ async function fetchPanelUserSelfUsage(context) {
 }
 
 // Sub2API exposes user balance as USD at /api/v1/auth/me. Newer deployments may
-// also expose subscription summaries, but the auth/me balance is the reliable
-// low-noise signal used by Metapi's Sub2API adapter.
+// also expose richer subscription summaries through /v1/usage, so this route is
+// a fallback for deployments where /v1/usage is unavailable.
 async function fetchSub2ApiAuthMeUsage(context) {
   const json = await requestJson(joinUrl(serviceRoot(context.baseUrl), "/api/v1/auth/me"), context.key, {
     name: "Sub2API auth/me",
@@ -793,7 +866,7 @@ async function fetchSub2ApiAuthMeUsage(context) {
 }
 
 // OpenRouter exposes normal API-key usage at /api/v1/key. Some accounts also
-// expose credits at /api/v1/credits; keep this adapter isolated because
+// expose credits at /api/v1/credits; keep this route isolated because
 // OpenRouter's base URL already includes /api/v1, unlike NewAPI/OneAPI.
 async function fetchOpenRouterUsage(context) {
   const base = cleanBaseUrl(context.baseUrl).includes("/api/v1")
@@ -827,27 +900,70 @@ function usageResult(context, source, text, raw) {
   };
 }
 
-async function usageAdapters(context) {
+const USAGE_ROUTES = {
+  "v1-usage": {
+    id: "v1-usage",
+    path: "/v1/usage",
+    run: fetchV1Usage,
+  },
+  "sub2api-auth-me": {
+    id: "sub2api-auth-me",
+    path: "/api/v1/auth/me",
+    run: fetchSub2ApiAuthMeUsage,
+  },
+  "newapi-token": {
+    id: "newapi-token",
+    path: "/api/usage/token/",
+    run: fetchNewApiTokenUsage,
+  },
+  "panel-user-self": {
+    id: "panel-user-self",
+    path: "/api/user/self",
+    run: fetchPanelUserSelfUsage,
+  },
+  "openrouter": {
+    id: "openrouter",
+    path: "/api/v1/key",
+    run: fetchOpenRouterUsage,
+  },
+};
+
+async function usageRouteIds(context) {
   const preset = await usagePreset();
-  const adapters = {
-    "sub2api": [fetchSub2ApiAuthMeUsage, fetchOpenAiCompatibleUsage],
-    "openai-compatible": [fetchOpenAiCompatibleUsage],
-    "new-api": [fetchNewApiTokenUsage, fetchPanelUserSelfUsage],
-    "one-api": [fetchNewApiTokenUsage, fetchPanelUserSelfUsage],
-    "onehub": [fetchNewApiTokenUsage, fetchPanelUserSelfUsage],
-    "one-hub": [fetchNewApiTokenUsage, fetchPanelUserSelfUsage],
-    "donehub": [fetchNewApiTokenUsage, fetchPanelUserSelfUsage],
-    "done-hub": [fetchNewApiTokenUsage, fetchPanelUserSelfUsage],
-    "veloera": [fetchPanelUserSelfUsage, fetchNewApiTokenUsage],
-    "anyrouter": [fetchNewApiTokenUsage, fetchPanelUserSelfUsage, fetchOpenAiCompatibleUsage],
-    "agentrouter": [fetchNewApiTokenUsage, fetchPanelUserSelfUsage, fetchOpenAiCompatibleUsage],
-    "openrouter": [fetchOpenRouterUsage],
+  const routes = {
+    "sub2api": ["v1-usage", "sub2api-auth-me"],
+    "openai-compatible": ["v1-usage"],
+    "new-api": ["newapi-token", "panel-user-self"],
+    "one-api": ["newapi-token", "panel-user-self"],
+    "onehub": ["newapi-token", "panel-user-self"],
+    "one-hub": ["newapi-token", "panel-user-self"],
+    "donehub": ["newapi-token", "panel-user-self"],
+    "done-hub": ["newapi-token", "panel-user-self"],
+    "veloera": ["panel-user-self", "newapi-token"],
+    "anyrouter": ["newapi-token", "panel-user-self", "v1-usage"],
+    "agentrouter": ["newapi-token", "panel-user-self", "v1-usage"],
+    "openrouter": ["openrouter"],
   };
-  if (adapters[preset]) return adapters[preset];
+  if (routes[preset]) return routes[preset];
 
   if (preset !== "auto") return [];
-  if (hostIncludes(context.baseUrl, "openrouter.ai")) return [fetchOpenRouterUsage];
-  return [fetchOpenAiCompatibleUsage, fetchSub2ApiAuthMeUsage, fetchNewApiTokenUsage, fetchPanelUserSelfUsage];
+  if (hostIncludes(context.baseUrl, "openrouter.ai")) return ["openrouter"];
+  return ["v1-usage", "sub2api-auth-me", "newapi-token", "panel-user-self"];
+}
+
+async function orderedUsageRoutes(context) {
+  const routeIds = await usageRouteIds(context);
+  const cached = await cachedUsageRoute(context);
+  if (!cached || !routeIds.includes(cached.route)) return routeIds.map((id) => USAGE_ROUTES[id]).filter(Boolean);
+  await debugLog({
+    source: "route-cache",
+    key: usageRouteCacheKey(context.baseUrl),
+    route: cached.route,
+    path: cached.path || USAGE_ROUTES[cached.route]?.path || "",
+  });
+  return [cached.route, ...routeIds.filter((id) => id !== cached.route)]
+    .map((id) => USAGE_ROUTES[id])
+    .filter(Boolean);
 }
 
 async function refresh() {
@@ -887,12 +1003,14 @@ async function refresh() {
   }
 
   let lastError;
-  for (const adapter of await usageAdapters(context)) {
+  for (const route of await orderedUsageRoutes(context)) {
     try {
-      return await adapter(context);
+      const result = await route.run(context);
+      await rememberUsageRoute(context, route, result);
+      return result;
     } catch (error) {
       lastError = error;
-      await debugLog({ adapter: adapter.name, error: error.message });
+      await debugLog({ route: route.id, path: route.path, error: error.message });
     }
   }
 
