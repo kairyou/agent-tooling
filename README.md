@@ -21,7 +21,7 @@ agent-tooling/
 │       └── commit/    # Conventional Commit message skill.
 ├── statusline/        # Statusline scripts/templates, grouped by agent.
 │   └── claude/        # Claude command-backed statusLine script + example config.
-└── usage/             # Shared API usage runtime for the Codex hook and Claude statusLine.
+└── lib/               # Shared implementation used by hooks, statuslines, and installers.
 ```
 
 ## Current Skills
@@ -122,7 +122,7 @@ comments and existing values.
 - `skills/` contains reusable `SKILL.md` capabilities.
 - `hooks/common/` contains shared guard logic; agent-specific wiring lives under `hooks/<agent>/`.
 - `statusline/claude/` contains the command-backed Claude statusLine script.
-- `usage/` contains shared API usage query logic.
+- `lib/` contains shared implementation such as API usage query logic.
 - The installer marks and removes only the config entries it owns.
 
 Run local checks with `npm test`.

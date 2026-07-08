@@ -19,7 +19,7 @@ agent-tooling/
 │       └── commit/    # Conventional Commit message skill。
 ├── statusline/        # Statusline 配置片段/模板，按 agent 分组。
 │   └── claude/        # Claude command-backed statusLine 脚本和示例配置。
-└── usage/             # 共享 API usage 运行时，供 Codex hook 与 Claude statusLine 使用。
+└── lib/               # hooks、statusline、installer 复用的共享实现。
 ```
 
 ## 当前 Skills
@@ -116,7 +116,7 @@ Claude statusLine 默认显示：
 - `skills/` 放可复用的 `SKILL.md` 能力。项目可以只安装自己需要的 skills。
 - `hooks/common/` 放共享 guard 逻辑；各 agent 的接线放在 `hooks/<agent>/`。
 - `statusline/claude/` 放 Claude command-backed statusLine 脚本。
-- `usage/` 放共享 API usage 查询逻辑。
+- `lib/` 放 API usage 查询等共享实现。
 - 安装器只标记并移除自己写入的配置项。
 
 本地检查运行 `npm test`。

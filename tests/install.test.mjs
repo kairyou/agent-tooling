@@ -20,6 +20,14 @@ function runInstall(args, env) {
   return result;
 }
 
+function runInstallRaw(args, env) {
+  return spawnSync(process.execPath, [INSTALL_SCRIPT, ...args], {
+    cwd: ROOT,
+    env: { ...process.env, ...env },
+    encoding: "utf8",
+  });
+}
+
 test("installer wires and unwires Codex usage without removing guard", () => {
   const temp = mkdtempSync(join(tmpdir(), "agent-tooling-install-"));
   const runtime = join(temp, "runtime");
@@ -32,7 +40,7 @@ test("installer wires and unwires Codex usage without removing guard", () => {
   assert.equal(installed.hooks.PreToolUse.length, 1);
   assert.match(installed.hooks.PreToolUse[0].hooks[0].command, /guard-command\.mjs/);
   assert.equal(installed.hooks.UserPromptSubmit.length, 1);
-  assert.match(installed.hooks.UserPromptSubmit[0].hooks[0].command, /usage\.mjs" hook --agent codex$/);
+  assert.match(installed.hooks.UserPromptSubmit[0].hooks[0].command, /\/lib\/usage\.mjs" hook --agent codex$/);
   assert.equal(installed.hooks.Stop.length, 1);
 
   runInstall(["usage", "-a", "codex", "--codex-hooks", hooksFile, "--uninstall"], env);
@@ -41,4 +49,16 @@ test("installer wires and unwires Codex usage without removing guard", () => {
   assert.equal(afterUninstall.hooks.PreToolUse.length, 1);
   assert.equal(afterUninstall.hooks.UserPromptSubmit, undefined);
   assert.equal(afterUninstall.hooks.Stop, undefined);
+});
+
+test("installer rejects Claude usage as a standalone capability", () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tooling-install-"));
+  const result = runInstallRaw(["usage", "-a", "claude", "--dry-run"], {
+    AGENT_TOOLING_HOME: join(temp, "runtime"),
+  });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Unsupported capability\/agent combination: usage -a claude/);
+  assert.match(result.stderr, /statusline -a claude/);
+  assert.equal(result.stdout, "");
 });

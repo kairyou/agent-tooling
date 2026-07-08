@@ -48,7 +48,7 @@ const SOURCE = {
   guardCommand: path.join(REPO_ROOT, "hooks", "common", "guard-command.mjs"),
   guardRules: path.join(REPO_ROOT, "hooks", "common", "guard-rules.mjs"),
   opencodeGuard: path.join(REPO_ROOT, "hooks", "opencode", "guard.mjs"),
-  usageRuntime: path.join(REPO_ROOT, "usage", "usage.mjs"),
+  usageScript: path.join(REPO_ROOT, "lib", "usage.mjs"),
   config: path.join(REPO_ROOT, "config.default.jsonc"),
   claudeStatusline: path.join(REPO_ROOT, "statusline", "claude", "statusline.mjs"),
 };
@@ -56,12 +56,17 @@ const RUNTIME = {
   guardCommand: path.join(INSTALL_ROOT, "hooks", "common", "guard-command.mjs"),
   guardRules: path.join(INSTALL_ROOT, "hooks", "common", "guard-rules.mjs"),
   opencodeGuard: path.join(INSTALL_ROOT, "hooks", "opencode", "guard.mjs"),
-  usageRuntime: path.join(INSTALL_ROOT, "usage", "usage.mjs"),
+  usageScript: path.join(INSTALL_ROOT, "lib", "usage.mjs"),
   config: path.join(INSTALL_ROOT, "config.jsonc"),
   claudeStatusline: path.join(INSTALL_ROOT, "statusline", "claude", "statusline.mjs"),
 };
 const ALL_CAPS = ["statusline", "guard", "usage"];
 const ALL_AGENTS = ["claude", "codex", "opencode"];
+const AGENT_CAPS = {
+  claude: ["statusline", "guard"],
+  codex: ["guard", "usage"],
+  opencode: ["guard"],
+};
 
 function fwd(p) {
   return p.replace(/\\/g, "/");
@@ -192,11 +197,11 @@ function installRuntimeAssets(opts) {
   }
   if (wants(opts, "statusline")) {
     addFile(SOURCE.claudeStatusline, RUNTIME.claudeStatusline);
-    addFile(SOURCE.usageRuntime, RUNTIME.usageRuntime);
+    addFile(SOURCE.usageScript, RUNTIME.usageScript);
     addFile(SOURCE.config, RUNTIME.config, { mergeJsonc: true });
   }
   if (wants(opts, "usage")) {
-    addFile(SOURCE.usageRuntime, RUNTIME.usageRuntime);
+    addFile(SOURCE.usageScript, RUNTIME.usageScript);
     addFile(SOURCE.config, RUNTIME.config, { mergeJsonc: true });
   }
   if (files.length === 0) return;
@@ -271,6 +276,25 @@ function wants(opts, cap) {
   return opts.capabilities.length === 0 || opts.capabilities.includes(cap);
 }
 
+function validateAgentCapabilities(opts) {
+  const invalid = [];
+  for (const agent of opts.agents) {
+    const supported = AGENT_CAPS[agent] || [];
+    for (const cap of opts.capabilities) {
+      if (!supported.includes(cap)) invalid.push(`${cap} -a ${agent}`);
+    }
+  }
+  if (invalid.length === 0) return;
+
+  console.error(`Unsupported capability/agent combination: ${invalid.join(", ")}`);
+  console.error("Supported combinations:");
+  for (const agent of ALL_AGENTS) {
+    console.error(`  ${agent}: ${AGENT_CAPS[agent].join(", ")}`);
+  }
+  console.error("Claude API usage is refreshed by the statusline capability; use `statusline -a claude`.");
+  process.exit(2);
+}
+
 function readJson(file) {
   if (!fs.existsSync(file)) return {};
   // Strip a UTF-8 BOM (common on Windows-authored files) before parsing.
@@ -342,7 +366,7 @@ function usageEntry() {
     hooks: [
       {
         type: "command",
-        command: `${nodeCmd(RUNTIME.usageRuntime)} hook --agent codex`,
+        command: `${nodeCmd(RUNTIME.usageScript)} hook --agent codex`,
         timeout: 5,
         statusMessage: "Refreshing API usage",
       },
@@ -543,6 +567,7 @@ function main() {
     console.log(help.join("\n"));
     return;
   }
+  validateAgentCapabilities(opts);
   installRuntimeAssets(opts);
   for (const name of opts.agents) {
     const run = AGENTS[name];
