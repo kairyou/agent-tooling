@@ -5,7 +5,7 @@
 // Capabilities (all global for now — they target the user-level config):
 //   statusline  Claude Code statusLine script (claude only).
 //   guard       PreToolUse hook blocking catastrophic shell commands (claude + codex).
-//   usage      Codex hook showing active API provider quota/balance.
+//   usage       Codex hook showing active API provider quota/balance.
 //
 // Targets:
 //   claude   -> ~/.claude/settings.json          (statusLine key + hooks key)
@@ -48,7 +48,7 @@ const SOURCE = {
   guardCommand: path.join(REPO_ROOT, "hooks", "common", "guard-command.mjs"),
   guardRules: path.join(REPO_ROOT, "hooks", "common", "guard-rules.mjs"),
   opencodeGuard: path.join(REPO_ROOT, "hooks", "opencode", "guard.mjs"),
-  codexUsage: path.join(REPO_ROOT, "hooks", "codex", "usage.mjs"),
+  usageRuntime: path.join(REPO_ROOT, "usage", "usage.mjs"),
   config: path.join(REPO_ROOT, "config.default.jsonc"),
   claudeStatusline: path.join(REPO_ROOT, "statusline", "claude", "statusline.mjs"),
 };
@@ -56,7 +56,7 @@ const RUNTIME = {
   guardCommand: path.join(INSTALL_ROOT, "hooks", "common", "guard-command.mjs"),
   guardRules: path.join(INSTALL_ROOT, "hooks", "common", "guard-rules.mjs"),
   opencodeGuard: path.join(INSTALL_ROOT, "hooks", "opencode", "guard.mjs"),
-  codexUsage: path.join(INSTALL_ROOT, "hooks", "codex", "usage.mjs"),
+  usageRuntime: path.join(INSTALL_ROOT, "usage", "usage.mjs"),
   config: path.join(INSTALL_ROOT, "config.jsonc"),
   claudeStatusline: path.join(INSTALL_ROOT, "statusline", "claude", "statusline.mjs"),
 };
@@ -192,10 +192,11 @@ function installRuntimeAssets(opts) {
   }
   if (wants(opts, "statusline")) {
     addFile(SOURCE.claudeStatusline, RUNTIME.claudeStatusline);
+    addFile(SOURCE.usageRuntime, RUNTIME.usageRuntime);
     addFile(SOURCE.config, RUNTIME.config, { mergeJsonc: true });
   }
   if (wants(opts, "usage")) {
-    addFile(SOURCE.codexUsage, RUNTIME.codexUsage);
+    addFile(SOURCE.usageRuntime, RUNTIME.usageRuntime);
     addFile(SOURCE.config, RUNTIME.config, { mergeJsonc: true });
   }
   if (files.length === 0) return;
@@ -341,7 +342,7 @@ function usageEntry() {
     hooks: [
       {
         type: "command",
-        command: `${nodeCmd(RUNTIME.codexUsage)} hook`,
+        command: `${nodeCmd(RUNTIME.usageRuntime)} hook --agent codex`,
         timeout: 5,
         statusMessage: "Refreshing API usage",
       },

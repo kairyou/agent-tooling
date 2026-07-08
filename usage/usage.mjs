@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Codex usage hook (agent-tooling).
-// Reads the active Codex provider from ~/.codex/config.toml, probes known
-// gateway usage endpoints, and prints a compact balance/quota message as a
-// Codex hook systemMessage. Fails open when provider usage cannot be fetched.
+// Agent usage runtime (agent-tooling).
+// Reads the active provider, probes known gateway usage endpoints, and prints a
+// compact balance/quota message. Fails open when provider usage cannot be fetched.
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createContext, runInContext } from "node:vm";
+import { pathToFileURL } from "node:url";
 
 const CODEX_HOME = process.env.CODEX_HOME || join(homedir(), ".codex");
 const AGENT_TOOLING_HOME = process.env.AGENT_TOOLING_HOME || join(homedir(), ".agent-tooling");
@@ -17,16 +17,38 @@ const CODEX_CONFIG_PATH = join(CODEX_HOME, "config.toml");
 const AGENT_CONFIG_PATH = process.env.AGENT_TOOLING_CONFIG || join(AGENT_TOOLING_HOME, "config.jsonc");
 const DEBUG_PATH = join(AGENT_TOOLING_HOME, "logs", "usage-debug.log");
 const ROUTE_CACHE_PATH = join(AGENT_TOOLING_HOME, "cache", "usage-routes.json");
+const SNAPSHOT_PATH = join(AGENT_TOOLING_HOME, "cache", "usage-snapshot.json");
+const REFRESH_STATE_PATH = join(AGENT_TOOLING_HOME, "cache", "usage-refresh-state.json");
 const REQUEST_TIMEOUT_MS = 5000;
 const DEFAULT_USAGE_DAYS = 30;
 const MAX_USAGE_DAYS = 90;
 const DEFAULT_NEW_API_QUOTA_SCALE = 500000;
 const ROUTE_CACHE_VERSION = 1;
+const SNAPSHOT_VERSION = 1;
+const REFRESH_STATE_VERSION = 1;
 const SHIELD_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36";
 
-const mode = process.argv[2] || "hook";
+function parseArgs(argv) {
+  const opts = { mode: "hook", agent: "codex" };
+  let modeSet = false;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--agent" && argv[i + 1]) {
+      opts.agent = argv[++i];
+    } else if (arg.startsWith("--agent=")) {
+      opts.agent = arg.slice("--agent=".length);
+    } else if (!arg.startsWith("-") && !modeSet) {
+      opts.mode = arg;
+      modeSet = true;
+    }
+  }
+  return opts;
+}
+
+const cli = parseArgs(process.argv.slice(2));
+const mode = cli.mode;
 
 async function debugLog(event) {
   const config = await agentConfig();
@@ -289,7 +311,12 @@ function activeProvider(config) {
 function isOfficialBaseUrl(baseUrl) {
   if (!baseUrl) return true;
   const clean = baseUrl.replace(/\/+$/, "");
-  return clean === "https://api.openai.com" || clean === "https://api.openai.com/v1";
+  return [
+    "https://api.openai.com",
+    "https://api.openai.com/v1",
+    "https://api.anthropic.com",
+    "https://api.anthropic.com/v1",
+  ].includes(clean);
 }
 
 function cleanBaseUrl(baseUrl) {
@@ -466,6 +493,68 @@ async function rememberUsageRoute(context, route, result) {
   }
 }
 
+async function readSnapshotCache() {
+  try {
+    const raw = await readTextIfExists(SNAPSHOT_PATH);
+    if (!raw.trim()) return { version: SNAPSHOT_VERSION, items: {} };
+    const parsed = JSON.parse(raw);
+    return {
+      version: SNAPSHOT_VERSION,
+      items: parsed?.items && typeof parsed.items === "object" ? parsed.items : {},
+    };
+  } catch {
+    return { version: SNAPSHOT_VERSION, items: {} };
+  }
+}
+
+async function rememberUsageSnapshot(context, result) {
+  if (!result?.text) return;
+  try {
+    const cache = await readSnapshotCache();
+    const key = usageRouteCacheKey(context.baseUrl);
+    cache.items[key] = {
+      text: result.text,
+      source: result.source,
+      baseUrl: context.baseUrl,
+      updatedAt: new Date().toISOString(),
+    };
+    await mkdir(dirname(SNAPSHOT_PATH), { recursive: true });
+    await writeFile(SNAPSHOT_PATH, `${JSON.stringify(cache, null, 2)}\n`);
+  } catch (error) {
+    await debugLog({ source: "snapshot-cache", error: error.message });
+  }
+}
+
+async function readRefreshState() {
+  try {
+    const raw = await readTextIfExists(REFRESH_STATE_PATH);
+    if (!raw.trim()) return { version: REFRESH_STATE_VERSION, items: {} };
+    const parsed = JSON.parse(raw);
+    return {
+      version: REFRESH_STATE_VERSION,
+      items: parsed?.items && typeof parsed.items === "object" ? parsed.items : {},
+    };
+  } catch {
+    return { version: REFRESH_STATE_VERSION, items: {} };
+  }
+}
+
+async function rememberRefreshState(context, patch) {
+  try {
+    const state = await readRefreshState();
+    const key = usageRouteCacheKey(context.baseUrl);
+    state.items[key] = {
+      ...(state.items[key] || {}),
+      ...patch,
+      baseUrl: context.baseUrl,
+    };
+    await mkdir(dirname(REFRESH_STATE_PATH), { recursive: true });
+    await writeFile(REFRESH_STATE_PATH, `${JSON.stringify(state, null, 2)}\n`);
+  } catch (error) {
+    await debugLog({ source: "refresh-state", error: error.message });
+  }
+}
+
 function apiKeyFor(auth, provider) {
   if (process.env.PROVIDER_USAGE_API_KEY) return process.env.PROVIDER_USAGE_API_KEY;
   if (process.env.SUB2API_API_KEY) return process.env.SUB2API_API_KEY;
@@ -473,6 +562,15 @@ function apiKeyFor(auth, provider) {
   if (auth.OPENAI_API_KEY) return auth.OPENAI_API_KEY;
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
   return "";
+}
+
+function apiKeyForClaude() {
+  return (
+    process.env.PROVIDER_USAGE_API_KEY ||
+    process.env.ANTHROPIC_AUTH_TOKEN ||
+    process.env.ANTHROPIC_API_KEY ||
+    ""
+  );
 }
 
 function providerLabel(providerName, provider) {
@@ -966,7 +1064,7 @@ async function orderedUsageRoutes(context) {
     .filter(Boolean);
 }
 
-async function refresh() {
+async function contextForCodex() {
   const auth = existsSync(AUTH_PATH) ? await readJson(AUTH_PATH) : {};
   const codexConfig = parseTomlLite(await readTextIfExists(CODEX_CONFIG_PATH));
   const { providerName, provider } = activeProvider(codexConfig);
@@ -977,28 +1075,52 @@ async function refresh() {
     provider.base_url ||
     "";
   const key = apiKeyFor(auth, provider);
-  const context = {
+  return {
     providerName,
     provider,
     baseUrl,
     key,
     label: providerLabel(providerName, provider),
   };
+}
+
+function contextForClaude() {
+  const baseUrl =
+    process.env.PROVIDER_USAGE_BASE_URL ||
+    process.env.ANTHROPIC_BASE_URL ||
+    "";
+  return {
+    providerName: "claude",
+    provider: { name: "Claude" },
+    baseUrl,
+    key: apiKeyForClaude(),
+    label: "Claude",
+  };
+}
+
+async function usageContext(agent) {
+  return agent === "claude" ? contextForClaude() : await contextForCodex();
+}
+
+async function refresh(agent = "codex") {
+  const context = await usageContext(agent);
 
   await debugLog({
     mode,
-    providerName,
-    baseUrl,
+    agent,
+    providerName: context.providerName,
+    baseUrl: context.baseUrl,
     preset: await usagePreset(),
-    providerEnvKey: provider.env_key || "",
+    providerEnvKey: context.provider?.env_key || "",
     hasProviderUsageKey: Boolean(process.env.PROVIDER_USAGE_API_KEY),
     hasSub2apiKey: Boolean(process.env.SUB2API_API_KEY),
-    hasProviderEnvKey: Boolean(provider.env_key && process.env[provider.env_key]),
-    hasAuthOpenaiKey: Boolean(auth.OPENAI_API_KEY),
+    hasProviderEnvKey: Boolean(context.provider?.env_key && process.env[context.provider.env_key]),
+    hasAnthropicAuthToken: Boolean(process.env.ANTHROPIC_AUTH_TOKEN),
+    hasAnthropicApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
     hasEnvOpenaiKey: Boolean(process.env.OPENAI_API_KEY),
   });
 
-  if (!key || isOfficialBaseUrl(baseUrl)) {
+  if (!context.key || isOfficialBaseUrl(context.baseUrl)) {
     return { skipped: true, text: "" };
   }
 
@@ -1007,6 +1129,13 @@ async function refresh() {
     try {
       const result = await route.run(context);
       await rememberUsageRoute(context, route, result);
+      if (agent === "claude") {
+        await rememberUsageSnapshot(context, result);
+        await rememberRefreshState(context, {
+          lastSuccessAt: new Date().toISOString(),
+          lastError: "",
+        });
+      }
       return result;
     } catch (error) {
       lastError = error;
@@ -1014,22 +1143,36 @@ async function refresh() {
     }
   }
 
-  if (lastError) throw lastError;
+  if (lastError) {
+    if (agent === "claude") {
+      await rememberRefreshState(context, {
+        lastFailureAt: new Date().toISOString(),
+        lastError: lastError.message,
+      });
+    }
+    throw lastError;
+  }
   return { skipped: true, text: "" };
 }
 
-try {
-  if (mode === "refresh") {
-    await refresh();
-  } else if (mode === "print" || mode === "print-or-refresh") {
-    const result = await refresh();
-    textOut(result?.text || "");
-  } else if (mode === "hook") {
-    const result = await refresh();
-    hookOut(result?.text || "");
-  } else {
-    throw new Error(`unknown mode: ${mode}`);
+async function main() {
+  try {
+    if (mode === "refresh") {
+      await refresh(cli.agent);
+    } else if (mode === "print" || mode === "print-or-refresh") {
+      const result = await refresh(cli.agent);
+      textOut(result?.text || "");
+    } else if (mode === "hook") {
+      const result = await refresh(cli.agent);
+      hookOut(result?.text || "");
+    } else {
+      throw new Error(`unknown mode: ${mode}`);
+    }
+  } catch (error) {
+    failSoft("Provider usage unavailable", error);
   }
-} catch (error) {
-  failSoft("Provider usage unavailable", error);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
 }

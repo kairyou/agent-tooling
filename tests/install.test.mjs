@@ -32,7 +32,7 @@ test("installer wires and unwires Codex usage without removing guard", () => {
   assert.equal(installed.hooks.PreToolUse.length, 1);
   assert.match(installed.hooks.PreToolUse[0].hooks[0].command, /guard-command\.mjs/);
   assert.equal(installed.hooks.UserPromptSubmit.length, 1);
-  assert.match(installed.hooks.UserPromptSubmit[0].hooks[0].command, /usage\.mjs" hook$/);
+  assert.match(installed.hooks.UserPromptSubmit[0].hooks[0].command, /usage\.mjs" hook --agent codex$/);
   assert.equal(installed.hooks.Stop.length, 1);
 
   runInstall(["usage", "-a", "codex", "--codex-hooks", hooksFile, "--uninstall"], env);

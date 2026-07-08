@@ -37,11 +37,114 @@ test("Claude statusline renders configured fields in configured order", () => {
 
   const result = spawnSync(process.execPath, [STATUSLINE_SCRIPT], {
     input: JSON.stringify(input),
-    env: { ...process.env, AGENT_TOOLING_CONFIG: configFile },
+    env: {
+      ...process.env,
+      AGENT_TOOLING_HOME: temp,
+      AGENT_TOOLING_CONFIG: configFile,
+      AGENT_TOOLING_USAGE_REFRESH: "0",
+      ANTHROPIC_BASE_URL: "",
+      PROVIDER_USAGE_BASE_URL: "",
+    },
     encoding: "utf8",
   });
 
   assert.equal(result.status, 0);
   assert.equal(result.stderr, "");
   assert.equal(result.stdout, `${basename(projectDir)} / Opus 4.8 / ctx 42%`);
+});
+
+test("Claude statusline keeps empty official rate limit placeholders", () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tooling-statusline-"));
+  const configFile = join(temp, "config.jsonc");
+  writeFileSync(configFile, JSON.stringify({
+    statusline: {
+      fields: ["model", "fiveHour", "week"],
+    },
+  }));
+
+  const result = spawnSync(process.execPath, [STATUSLINE_SCRIPT], {
+    input: JSON.stringify({ model: { display_name: "Claude Sonnet 4.5" } }),
+    env: {
+      ...process.env,
+      AGENT_TOOLING_CONFIG: configFile,
+      ANTHROPIC_BASE_URL: "",
+      PROVIDER_USAGE_BASE_URL: "",
+      AGENT_TOOLING_USAGE_REFRESH: "0",
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout, "Sonnet 4.5 | 5h – | w –");
+});
+
+test("Claude statusline hides empty rate limit placeholders for relay base URLs", () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tooling-statusline-"));
+  const configFile = join(temp, "config.jsonc");
+  writeFileSync(configFile, JSON.stringify({
+    statusline: {
+      fields: ["model", "fiveHour", "week"],
+    },
+  }));
+
+  const result = spawnSync(process.execPath, [STATUSLINE_SCRIPT], {
+    input: JSON.stringify({ model: { display_name: "Claude Sonnet 4.5" } }),
+    env: {
+      ...process.env,
+      AGENT_TOOLING_CONFIG: configFile,
+      ANTHROPIC_BASE_URL: "https://relay.example.com/v1",
+      PROVIDER_USAGE_BASE_URL: "",
+      AGENT_TOOLING_USAGE_REFRESH: "0",
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout, "Sonnet 4.5");
+});
+
+test("Claude statusline appends relay usage snapshot", () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tooling-statusline-"));
+  const agentHome = join(temp, "agent");
+  const cacheDir = join(agentHome, "cache");
+  const configFile = join(temp, "config.jsonc");
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(configFile, JSON.stringify({
+    statusline: {
+      fields: ["model", "fiveHour", "week"],
+    },
+  }));
+  writeFileSync(join(cacheDir, "usage-snapshot.json"), JSON.stringify({
+    version: 1,
+    items: {
+      "https://relay.example.com": {
+        text: "[额度] 钱包余额 | 余额 $362 | 今日 $61.7 | 近30天 $566",
+        source: "v1-usage",
+        baseUrl: "https://relay.example.com/v1",
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  }));
+
+  const result = spawnSync(process.execPath, [STATUSLINE_SCRIPT], {
+    input: JSON.stringify({ model: { display_name: "Claude Sonnet 4.5" } }),
+    env: {
+      ...process.env,
+      AGENT_TOOLING_HOME: agentHome,
+      AGENT_TOOLING_CONFIG: configFile,
+      ANTHROPIC_BASE_URL: "https://relay.example.com/v1",
+      PROVIDER_USAGE_BASE_URL: "",
+      AGENT_TOOLING_USAGE_REFRESH: "0",
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  assert.equal(
+    result.stdout,
+    "Sonnet 4.5 | [额度] 钱包余额 | 余额 $362 | 今日 $61.7 | 近30天 $566"
+  );
 });

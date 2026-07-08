@@ -17,8 +17,9 @@ agent-tooling/
 ├── skills/            # 可复用 Agent Skills，供 CLI 扫描和 plugin manifest 声明。
 │   └── workflow/      # 工作流类 skills。
 │       └── commit/    # Conventional Commit message skill。
-└── statusline/        # Statusline 配置片段/模板，按 agent 分组。
-    └── claude/        # Claude command-backed statusLine 脚本和示例配置。
+├── statusline/        # Statusline 配置片段/模板，按 agent 分组。
+│   └── claude/        # Claude command-backed statusLine 脚本和示例配置。
+└── usage/             # 共享 API usage 运行时，供 Codex hook 与 Claude statusLine 使用。
 ```
 
 ## 当前 Skills
@@ -79,8 +80,9 @@ npx -y github:kairyou/agent-tooling guard usage -a codex --uninstall
 - **opencode** —— `guard`，作为插件桩放进 `~/.config/opencode/plugin/`。
 
 `guard` hook 会拦截一小份灾难性 shell 命令的 deny-list。
-`usage` hook 会显示兼容 Sub2API-like、NewAPI/OneAPI/OneHub/DoneHub/
-Veloera/AnyRouter-like 与 OpenRouter 网关的余额、额度或套餐用量。
+`usage` 会显示兼容 Sub2API-like、NewAPI/OneAPI/OneHub/DoneHub/
+Veloera/AnyRouter-like 与 OpenRouter 网关的余额、额度或套餐用量；Codex 通过 hook
+显示，Claude statusLine 在使用兼容中转时会自动追加。
 
 显示效果示例：
 
@@ -109,6 +111,7 @@ Claude statusLine 默认显示：
 - `skills/` 放可复用的 `SKILL.md` 能力。项目可以只安装自己需要的 skills。
 - `hooks/common/` 放共享 guard 逻辑；各 agent 的接线放在 `hooks/<agent>/`。
 - `statusline/claude/` 放 Claude command-backed statusLine 脚本。
+- `usage/` 放共享 API usage 查询逻辑。
 - 安装器只标记并移除自己写入的配置项。
 
 本地检查运行 `npm test`。

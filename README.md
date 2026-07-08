@@ -19,8 +19,9 @@ agent-tooling/
 ├── skills/            # Reusable Agent Skills for CLI discovery and plugin manifests.
 │   └── workflow/      # Workflow-oriented skills.
 │       └── commit/    # Conventional Commit message skill.
-└── statusline/        # Statusline scripts/templates, grouped by agent.
-    └── claude/        # Claude command-backed statusLine script + example config.
+├── statusline/        # Statusline scripts/templates, grouped by agent.
+│   └── claude/        # Claude command-backed statusLine script + example config.
+└── usage/             # Shared API usage runtime for the Codex hook and Claude statusLine.
 ```
 
 ## Current Skills
@@ -82,9 +83,10 @@ Installed capabilities:
 - **opencode** — the `guard`, as a plugin stub dropped into `~/.config/opencode/plugin/`.
 
 The `guard` hook blocks a small deny-list of catastrophic shell commands.
-The `usage` hook shows the active API provider's balance, quota, or plan
+The `usage` runtime shows the active API provider's balance, quota, or plan
 usage for compatible Sub2API-like, NewAPI/OneAPI/OneHub/DoneHub/Veloera/
-AnyRouter-like, and OpenRouter gateways.
+AnyRouter-like, and OpenRouter gateways. Codex displays it through a hook;
+Claude statusLine appends it automatically when a compatible relay is active.
 
 Output examples:
 
@@ -115,6 +117,7 @@ comments and existing values.
 - `skills/` contains reusable `SKILL.md` capabilities.
 - `hooks/common/` contains shared guard logic; agent-specific wiring lives under `hooks/<agent>/`.
 - `statusline/claude/` contains the command-backed Claude statusLine script.
+- `usage/` contains shared API usage query logic.
 - The installer marks and removes only the config entries it owns.
 
 Run local checks with `npm test`.

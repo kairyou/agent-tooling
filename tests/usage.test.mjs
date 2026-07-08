@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PROVIDER_SCRIPT = join(ROOT, "hooks", "codex", "usage.mjs");
+const PROVIDER_SCRIPT = join(ROOT, "usage", "usage.mjs");
 
 async function withServer(handler, fn) {
   const server = http.createServer(handler);
@@ -41,6 +41,9 @@ async function runProvider({ baseUrl, preset = "auto", config = {}, codexHome, a
         CODEX_HOME: codexHome,
         AGENT_TOOLING_HOME: agentHome,
         PROVIDER_USAGE_PRESET: preset,
+        PROVIDER_USAGE_BASE_URL: "",
+        SUB2API_BASE_URL: "",
+        OPENAI_BASE_URL: "",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

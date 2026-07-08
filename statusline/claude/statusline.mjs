@@ -10,13 +10,20 @@
 //   AGENT_TOOLING_STATUSLINE_FIELDS=branch,model,context
 //   ~/.agent-tooling/config.jsonc
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_CONFIG_FILE = join(SCRIPT_DIR, "..", "..", "config.jsonc");
+const AGENT_TOOLING_HOME = process.env.AGENT_TOOLING_HOME || join(SCRIPT_DIR, "..", "..");
+const DEFAULT_CONFIG_FILE = join(AGENT_TOOLING_HOME, "config.jsonc");
+const SNAPSHOT_FILE = join(AGENT_TOOLING_HOME, "cache", "usage-snapshot.json");
+const REFRESH_STATE_FILE = join(AGENT_TOOLING_HOME, "cache", "usage-refresh-state.json");
+const USAGE_RUNTIME = join(AGENT_TOOLING_HOME, "usage", "usage.mjs");
+const DEFAULT_SNAPSHOT_TTL_MS = 60_000;
+const DEFAULT_REFRESH_COOLDOWN_MS = 30_000;
+const DEFAULT_FAILURE_BACKOFF_MS = 120_000;
 
 const DEFAULT_CONFIG = {
   fields: ["branch", "model", "fiveHour", "week"],
@@ -183,11 +190,16 @@ function compactDuration(totalSeconds) {
 
 function usageWindow(window, config) {
   if (!window || typeof window.used_percentage !== "number") {
-    return config.symbols.empty;
+    return "";
   }
   const pct = `${Math.round(window.used_percentage)}%`;
   const left = compactDuration(secondsUntil(window.resets_at));
   return left ? `${pct} ${config.symbols.reset}${left}` : pct;
+}
+
+function showMissingUsageWindow() {
+  const baseUrl = activeRelayBaseUrl();
+  return !baseUrl || isOfficialBaseUrl(baseUrl);
 }
 
 function shortModelName(name) {
@@ -208,10 +220,18 @@ function renderField(field, data, config) {
     }
     case "model":
       return shortModelName(data?.model?.display_name || data?.model?.id || "");
-    case "fiveHour":
-      return `${config.symbols.fiveHour} ${usageWindow(data?.rate_limits?.five_hour, config)}`;
-    case "week":
-      return `${config.symbols.week} ${usageWindow(data?.rate_limits?.seven_day, config)}`;
+    case "fiveHour": {
+      const value = usageWindow(data?.rate_limits?.five_hour, config);
+      return value || showMissingUsageWindow()
+        ? `${config.symbols.fiveHour} ${value || config.symbols.empty}`
+        : "";
+    }
+    case "week": {
+      const value = usageWindow(data?.rate_limits?.seven_day, config);
+      return value || showMissingUsageWindow()
+        ? `${config.symbols.week} ${value || config.symbols.empty}`
+        : "";
+    }
     case "context": {
       const pct = data?.context_window?.used_percentage;
       return typeof pct === "number" ? `${config.symbols.context} ${Math.round(pct)}%` : "";
@@ -223,11 +243,145 @@ function renderField(field, data, config) {
   }
 }
 
+function numberFromEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function cleanBaseUrl(baseUrl) {
+  return String(baseUrl || "").replace(/\/+$/, "");
+}
+
+function isOfficialBaseUrl(baseUrl) {
+  if (!baseUrl) return true;
+  const clean = cleanBaseUrl(baseUrl);
+  return [
+    "https://api.anthropic.com",
+    "https://api.anthropic.com/v1",
+    "https://api.openai.com",
+    "https://api.openai.com/v1",
+  ].includes(clean);
+}
+
+function usageRouteCacheKey(baseUrl) {
+  try {
+    const url = new URL(cleanBaseUrl(baseUrl));
+    url.hash = "";
+    url.search = "";
+    url.pathname = url.pathname
+      .replace(/\/+$/, "")
+      .replace(/\/api\/v1$/i, "")
+      .replace(/\/v1$/i, "");
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return cleanBaseUrl(baseUrl).endsWith("/v1") ? cleanBaseUrl(baseUrl).slice(0, -3) : cleanBaseUrl(baseUrl);
+  }
+}
+
+function readJsonFileRaw(file) {
+  try {
+    if (!fs.existsSync(file)) return {};
+    const raw = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+    return raw.trim() ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function activeRelayBaseUrl() {
+  return process.env.PROVIDER_USAGE_BASE_URL || process.env.ANTHROPIC_BASE_URL || "";
+}
+
+function hasClaudeUsageToken() {
+  return Boolean(
+    process.env.PROVIDER_USAGE_API_KEY ||
+      process.env.ANTHROPIC_AUTH_TOKEN ||
+      process.env.ANTHROPIC_API_KEY
+  );
+}
+
+function snapshotForBaseUrl(baseUrl) {
+  const snapshot = readJsonFileRaw(SNAPSHOT_FILE);
+  const key = usageRouteCacheKey(baseUrl);
+  const item = snapshot?.items?.[key];
+  return item?.text ? item : null;
+}
+
+function refreshStateForBaseUrl(baseUrl) {
+  const state = readJsonFileRaw(REFRESH_STATE_FILE);
+  return state?.items?.[usageRouteCacheKey(baseUrl)] || {};
+}
+
+function ageMs(isoDate) {
+  const time = Date.parse(isoDate || "");
+  return Number.isFinite(time) ? Date.now() - time : Number.POSITIVE_INFINITY;
+}
+
+function writeRefreshAttempt(baseUrl) {
+  try {
+    const state = readJsonFileRaw(REFRESH_STATE_FILE);
+    const key = usageRouteCacheKey(baseUrl);
+    state.version = 1;
+    state.items = state.items && typeof state.items === "object" ? state.items : {};
+    state.items[key] = {
+      ...(state.items[key] || {}),
+      baseUrl,
+      lastAttemptAt: new Date().toISOString(),
+    };
+    fs.mkdirSync(dirname(REFRESH_STATE_FILE), { recursive: true });
+    fs.writeFileSync(REFRESH_STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
+  } catch {
+    // Statusline must stay non-blocking and fail-open.
+  }
+}
+
+function shouldRefreshUsage(baseUrl, snapshot) {
+  if (process.env.AGENT_TOOLING_USAGE_REFRESH === "0") return false;
+  if (!baseUrl || isOfficialBaseUrl(baseUrl)) return false;
+  if (!hasClaudeUsageToken()) return false;
+  if (!fs.existsSync(USAGE_RUNTIME)) return false;
+
+  const ttlMs = numberFromEnv("AGENT_TOOLING_USAGE_SNAPSHOT_TTL_MS", DEFAULT_SNAPSHOT_TTL_MS);
+  const cooldownMs = numberFromEnv("AGENT_TOOLING_USAGE_REFRESH_COOLDOWN_MS", DEFAULT_REFRESH_COOLDOWN_MS);
+  const failureBackoffMs = numberFromEnv("AGENT_TOOLING_USAGE_FAILURE_BACKOFF_MS", DEFAULT_FAILURE_BACKOFF_MS);
+  const state = refreshStateForBaseUrl(baseUrl);
+
+  if (ageMs(state.lastAttemptAt) < cooldownMs) return false;
+  if (state.lastError && ageMs(state.lastFailureAt) < failureBackoffMs) return false;
+  return !snapshot || ageMs(snapshot.updatedAt) >= ttlMs;
+}
+
+function refreshUsageInBackground(baseUrl) {
+  if (!shouldRefreshUsage(baseUrl, snapshotForBaseUrl(baseUrl))) return;
+  writeRefreshAttempt(baseUrl);
+  try {
+    const child = spawn(process.execPath, [USAGE_RUNTIME, "refresh", "--agent", "claude"], {
+      detached: true,
+      stdio: "ignore",
+      env: process.env,
+      windowsHide: true,
+    });
+    child.unref();
+  } catch {
+    // Statusline must never surface provider usage refresh errors.
+  }
+}
+
+function providerUsageStatus() {
+  const baseUrl = activeRelayBaseUrl();
+  if (!baseUrl || isOfficialBaseUrl(baseUrl)) return "";
+  const snapshot = snapshotForBaseUrl(baseUrl);
+  if (shouldRefreshUsage(baseUrl, snapshot)) refreshUsageInBackground(baseUrl);
+  return snapshot?.text || "";
+}
+
 function render(data, config) {
-  return config.fields
+  const fields = config.fields
     .map((field) => renderField(field, data, config))
-    .filter(Boolean)
-    .join(config.separator);
+    .filter(Boolean);
+  const providerUsage = providerUsageStatus();
+  if (providerUsage) fields.push(providerUsage);
+  return fields.join(config.separator);
 }
 
 async function main() {
