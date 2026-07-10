@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -28,17 +28,22 @@ function runInstallRaw(args, env) {
   });
 }
 
-test("installer wires and unwires Codex usage without removing guard", () => {
+test("installer wires and unwires Codex usage without removing unrelated hooks", () => {
   const temp = mkdtempSync(join(tmpdir(), "agent-tools-install-"));
   const runtime = join(temp, "runtime");
   const hooksFile = join(temp, "hooks.json");
   const env = { AGENT_TOOLS_HOME: runtime };
+  const existingHook = {
+    matcher: "^Bash$",
+    hooks: [{ type: "command", command: "node user-hook.mjs" }],
+  };
+  writeFileSync(hooksFile, JSON.stringify({ hooks: { PreToolUse: [existingHook] } }));
 
-  runInstall(["guard", "usage", "-a", "codex", "--codex-hooks", hooksFile], env);
+  runInstall(["usage", "-a", "codex", "--codex-hooks", hooksFile], env);
   const installed = JSON.parse(readFileSync(hooksFile, "utf8"));
 
   assert.equal(installed.hooks.PreToolUse.length, 1);
-  assert.match(installed.hooks.PreToolUse[0].hooks[0].command, /guard-command\.mjs/);
+  assert.deepEqual(installed.hooks.PreToolUse[0], existingHook);
   assert.equal(installed.hooks.UserPromptSubmit.length, 1);
   assert.match(installed.hooks.UserPromptSubmit[0].hooks[0].command, /\/hooks\/codex\/usage-hook\.mjs"$/);
   assert.equal(installed.hooks.Stop.length, 1);
@@ -47,6 +52,7 @@ test("installer wires and unwires Codex usage without removing guard", () => {
   const afterUninstall = JSON.parse(readFileSync(hooksFile, "utf8"));
 
   assert.equal(afterUninstall.hooks.PreToolUse.length, 1);
+  assert.deepEqual(afterUninstall.hooks.PreToolUse[0], existingHook);
   assert.equal(afterUninstall.hooks.UserPromptSubmit, undefined);
   assert.equal(afterUninstall.hooks.Stop, undefined);
 });

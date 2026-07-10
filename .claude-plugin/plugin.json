@@ -1,7 +1,13 @@
 {
-  "name": "agent-tooling",
-  "description": "Reusable agent skills, hooks, statusline tooling, and install helpers for Codex, Claude Code, and opencode",
+  "name": "agent-tools",
+  "version": "0.1.0",
+  "description": "Skills for Codex, Claude Code, and opencode, plus runtime integrations for Codex and Claude Code",
+  "author": {
+    "name": "kairyou"
+  },
   "skills": [
-    "./skills/workflow/commit"
+    "./skills/workflow/at-commit",
+    "./skills/workflow/at-review",
+    "./skills/workflow/at-simplify"
   ]
 }

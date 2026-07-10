@@ -2,7 +2,7 @@
   "name": "agent-tools",
   "version": "0.1.0",
   "private": true,
-  "description": "Reusable skills, hooks, statusline tools, and installers for Codex, Claude Code, and opencode.",
+  "description": "Skills for Codex, Claude Code, and opencode, plus runtime integrations for Codex and Claude Code.",
   "license": "MIT",
   "scripts": {
     "test": "node --test tests/*.test.mjs"

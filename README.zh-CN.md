@@ -1,6 +1,6 @@
 # Agent Tools
 
-面向 Codex、Claude Code 与 opencode 的可复用 skills、hooks、statusline 工具与安装器。本仓库把各项能力放在可预期的位置；不同项目可以只安装自己需要的部分。
+面向 Codex、Claude Code 与 opencode 的可复用 skills, 以及面向 Codex 与 Claude Code 的 runtime integrations. 本仓库把各项能力放在可预期的位置; 不同项目可以只安装自己需要的部分.
 
 ## 目录结构
 
@@ -8,15 +8,13 @@
 agent-tools/
 ├── .claude-plugin/    # Claude Code/plugin 生态的 manifest。
 ├── .codex-plugin/     # Codex plugin manifest。
-├── hooks/             # Hook 脚本和配置片段，区分通用逻辑与 agent 接线。
-│   ├── common/        # 跨 agent 通用逻辑：guard-rules.mjs + guard-command.mjs（Claude/Codex CLI）。
-│   ├── opencode/      # opencode 插件接线（guard.mjs），复用 common/ 规则。
-│   ├── claude/        # Claude Code hook 素材（接线由安装器生成进 settings.json）。
-│   └── codex/         # Codex hook 素材（接线由安装器生成进 hooks.json）。
+├── hooks/             # 通用 hook 逻辑及各 agent 的适配实现。
 ├── scripts/           # 安装、同步、校验和仓库维护脚本。
 ├── skills/            # 可复用 Agent Skills，供 CLI 扫描和 plugin manifest 声明。
 │   └── workflow/      # 工作流类 skills。
-│       └── commit/    # Conventional Commit message skill。
+│       ├── at-commit/   # 生成 Conventional Commits message.
+│       ├── at-review/   # 审查改动中的 bug 与回归风险.
+│       └── at-simplify/ # 减少改动中的冗余和复杂度.
 ├── statusline/        # Statusline 配置片段/模板，按 agent 分组。
 │   └── claude/        # Claude command-backed statusLine 脚本和示例配置。
 └── lib/               # hooks、statusline、installer 复用的共享实现。
@@ -24,7 +22,9 @@ agent-tools/
 
 ## 当前 Skills
 
-- `commit`：根据暂存区改动生成 Conventional Commits message，并在提交前等待用户确认。
+- `at-commit`: 根据暂存区改动生成 Conventional Commits message, 并在提交前等待用户确认.
+- `at-review`: 审查改动中的正确性 bug, 回归风险, 约定违规和高价值清理项.
+- `at-simplify`: 重构改动, 减少冗余, 降低复杂度, 提升代码质量.
 
 ## 使用方式
 
@@ -37,49 +37,41 @@ npx -y skills@latest add kairyou/agent-tools --list
 全局安装 skill：
 
 ```bash
-npx -y skills@latest add kairyou/agent-tools --skill commit -g -y
+npx -y skills@latest add kairyou/agent-tools --skill at-commit -g -y
 ```
 
 项目级安装：
 
 ```bash
 # 如果安装结果可能提交到 Git，优先使用 --copy，不要提交 symlink。
-npx -y skills@latest add kairyou/agent-tools --skill commit --copy -y
+npx -y skills@latest add kairyou/agent-tools --skill at-commit --copy -y
 ```
 
-多个 skill 可以跟在 `--skill` 后面，例如 `--skill commit other-skill`。
+多个 skill 可以跟在 `--skill` 后面，例如 `--skill at-commit at-review at-simplify`。
 
-## 安装 hooks 与 statusline
+## 安装 statusline 与 usage
 
-用仓库内置安装器安装 hooks 与 statusline：
+用仓库内置安装器安装 runtime capabilities：
 
 ```bash
-# Claude：statusLine + guard
-npx -y github:kairyou/agent-tools statusline guard -a claude
+# Claude statusLine
+npx -y github:kairyou/agent-tools statusline -a claude
 
-# Codex：guard + API usage
-npx -y github:kairyou/agent-tools guard usage -a codex
-
-# opencode：guard plugin
-npx -y github:kairyou/agent-tools guard -a opencode
-
-# 多个 agent 一起安装
-npx -y github:kairyou/agent-tools guard -a claude codex opencode
+# Codex API usage
+npx -y github:kairyou/agent-tools usage -a codex
 
 # 预览或卸载
-npx -y github:kairyou/agent-tools guard usage -a codex --dry-run
-npx -y github:kairyou/agent-tools guard usage -a codex --uninstall
+npx -y github:kairyou/agent-tools usage -a codex --dry-run
+npx -y github:kairyou/agent-tools usage -a codex --uninstall
 ```
 
 安装器会把运行时脚本复制到 `~/.agent-tools/`，然后让各 agent 配置指向这里。
 
 已接线能力：
 
-- **Claude** —— `statusLine` + `guard` PreToolUse hook，写入 `~/.claude/settings.json`。
-- **Codex** —— `guard` hook 与 `usage` hook，写入 `~/.codex/hooks.json`。
-- **opencode** —— `guard`，作为插件桩放进 `~/.config/opencode/plugin/`。
+- **Claude** —— `statusLine`，写入 `~/.claude/settings.json`。
+- **Codex** —— `usage` hook，写入 `~/.codex/hooks.json`。
 
-`guard` hook 会拦截一小份灾难性 shell 命令的 deny-list。
 `usage` 会显示兼容 Sub2API-like、NewAPI/OneAPI/OneHub/DoneHub/
 Veloera/AnyRouter-like 与 OpenRouter 网关的余额、额度或套餐用量；Codex 通过 hook
 显示，Claude statusLine 在使用兼容中转时会自动追加。
@@ -97,8 +89,7 @@ warning: API | balance $362 | today $61.7 | 30d $566
 字段含义：`D/W/M` 是日/周/月套餐消耗与上限，`Exp` 是套餐到期日，
 `balance` 是钱包余额，`today` / `30d` 是今日与近 30 天 API 消耗。
 
-安装 Codex hook 后，需要在 Codex 里运行 `/hooks` 并批准 agent-tools hooks。安装
-opencode plugin 后，需要重启 opencode。
+安装 Codex hook 后，需要在 Codex 里运行 `/hooks` 并批准 agent-tools usage hooks。
 
 Claude statusLine 默认显示：
 
@@ -114,7 +105,7 @@ Claude statusLine 默认显示：
 ## 说明
 
 - `skills/` 放可复用的 `SKILL.md` 能力。项目可以只安装自己需要的 skills。
-- `hooks/common/` 放共享 guard 逻辑；各 agent 的接线放在 `hooks/<agent>/`。
+- `hooks/` 按通用逻辑和各 agent 适配实现划分目录。
 - `statusline/claude/` 放 Claude command-backed statusLine 脚本。
 - `lib/` 放 API usage 查询等共享实现。
 - 安装器只标记并移除自己写入的配置项。

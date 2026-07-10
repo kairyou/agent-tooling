@@ -1,35 +1,28 @@
 #!/usr/bin/env node
-// agent-tools installer: wires hooks / statusline into each agent's config.
+// agent-tools installer: wires statusline / usage into each agent's config.
 // Skills are NOT handled here — install those with `npx skills add`.
 //
 // Capabilities (all global for now — they target the user-level config):
 //   statusline  Claude Code statusLine script (claude only).
-//   guard       PreToolUse hook blocking catastrophic shell commands (claude + codex).
 //   usage       Codex hook showing active API provider quota/balance.
 //
 // Targets:
-//   claude   -> ~/.claude/settings.json          (statusLine key + hooks key)
-//   codex    -> ~/.codex/hooks.json              (standalone hooks file)
-//   opencode -> ~/.config/opencode/plugin/agent-tools-guard.js (generated stub)
+//   claude -> ~/.claude/settings.json (statusLine key)
+//   codex  -> ~/.codex/hooks.json     (standalone hooks file)
 // Runtime scripts are copied into ~/.agent-tools so this installer can be
 // run via npx from GitHub without requiring a persistent local clone.
 //
-// statusLine is global because it is a personal UI preference; the guard is
-// global because a safety net should apply to every session.
-//
 // NOTE: Codex will not run a freshly-installed hook until you trust it — run
-// `/hooks` inside Codex and approve the agent-tools guard. opencode needs a
-// restart to load the plugin.
+// `/hooks` inside Codex and approve the agent-tools usage hooks.
 //
 // Usage:
 //   agent-tools <capabilities> [options]
 //
 // Options:
-//   -a, --agent <names>       Target agents: claude | codex | opencode.
+//   -a, --agent <names>       Target agents: claude | codex.
 //                             Default: claude.
 //   --settings <path>         Override the Claude settings.json (for testing).
 //   --codex-hooks <path>      Override the Codex hooks.json (for testing).
-//   --opencode-plugin-dir <p> Override the opencode plugin dir (for testing).
 //   --uninstall               Remove what this installer added, restoring backups.
 //   --dry-run                 Print planned changes without writing anything.
 //   -h, --help                Show this help.
@@ -37,7 +30,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL_ROOT =
@@ -45,29 +38,22 @@ const INSTALL_ROOT =
 const META_KEY = "_agentTools";
 const META_VERSION = 1;
 const SOURCE = {
-  guardCommand: path.join(REPO_ROOT, "hooks", "common", "guard-command.mjs"),
-  guardRules: path.join(REPO_ROOT, "hooks", "common", "guard-rules.mjs"),
-  opencodeGuard: path.join(REPO_ROOT, "hooks", "opencode", "guard.mjs"),
   codexUsageHook: path.join(REPO_ROOT, "hooks", "codex", "usage-hook.mjs"),
   usageScript: path.join(REPO_ROOT, "lib", "usage.mjs"),
   config: path.join(REPO_ROOT, "config.default.jsonc"),
   claudeStatusline: path.join(REPO_ROOT, "statusline", "claude", "statusline.mjs"),
 };
 const RUNTIME = {
-  guardCommand: path.join(INSTALL_ROOT, "hooks", "common", "guard-command.mjs"),
-  guardRules: path.join(INSTALL_ROOT, "hooks", "common", "guard-rules.mjs"),
-  opencodeGuard: path.join(INSTALL_ROOT, "hooks", "opencode", "guard.mjs"),
   codexUsageHook: path.join(INSTALL_ROOT, "hooks", "codex", "usage-hook.mjs"),
   usageScript: path.join(INSTALL_ROOT, "lib", "usage.mjs"),
   config: path.join(INSTALL_ROOT, "config.jsonc"),
   claudeStatusline: path.join(INSTALL_ROOT, "statusline", "claude", "statusline.mjs"),
 };
-const ALL_CAPS = ["statusline", "guard", "usage"];
-const ALL_AGENTS = ["claude", "codex", "opencode"];
+const ALL_CAPS = ["statusline", "usage"];
+const ALL_AGENTS = ["claude", "codex"];
 const AGENT_CAPS = {
-  claude: ["statusline", "guard"],
-  codex: ["guard", "usage"],
-  opencode: ["guard"],
+  claude: ["statusline"],
+  codex: ["usage"],
 };
 
 function fwd(p) {
@@ -192,11 +178,6 @@ function installRuntimeAssets(opts) {
   function addFile(src, dest, options) {
     if (!files.some(([, existingDest]) => existingDest === dest)) files.push([src, dest, options]);
   }
-  if (wants(opts, "guard")) {
-    addFile(SOURCE.guardCommand, RUNTIME.guardCommand);
-    addFile(SOURCE.guardRules, RUNTIME.guardRules);
-    addFile(SOURCE.opencodeGuard, RUNTIME.opencodeGuard);
-  }
   if (wants(opts, "statusline")) {
     addFile(SOURCE.claudeStatusline, RUNTIME.claudeStatusline);
     addFile(SOURCE.usageScript, RUNTIME.usageScript);
@@ -218,7 +199,6 @@ function parseArgs(argv) {
     capabilities: [],
     settings: null,
     codexHooks: null,
-    opencodePluginDir: null,
     uninstall: false,
     dryRun: false,
     help: false,
@@ -248,7 +228,6 @@ function parseArgs(argv) {
       }
       case "--settings": opts.settings = argv[++i]; break;
       case "--codex-hooks": opts.codexHooks = argv[++i]; break;
-      case "--opencode-plugin-dir": opts.opencodePluginDir = argv[++i]; break;
       case "--uninstall": opts.uninstall = true; break;
       case "--dry-run": opts.dryRun = true; break;
       case "-h":
@@ -332,38 +311,6 @@ function removeFile(file, dryRun) {
   console.log(`  removed now-empty ${file}`);
 }
 
-// The guard hook entry, identified across configs by its command signature.
-function guardEntry(matcher) {
-  return { matcher, hooks: [{ type: "command", command: nodeCmd(RUNTIME.guardCommand) }] };
-}
-
-function isOurGuardEntry(entry) {
-  return (
-    entry &&
-    Array.isArray(entry.hooks) &&
-    entry.hooks.some(
-      (h) => typeof h?.command === "string" && h.command.includes("guard-command.mjs")
-    )
-  );
-}
-
-// Add/remove our guard in a `hooks.PreToolUse` array, coexisting with the
-// user's own hooks. Returns nothing; mutates cfg in place.
-function applyGuard(cfg, { matcher, remove }) {
-  cfg.hooks = cfg.hooks || {};
-  if (remove) {
-    if (cfg.hooks.PreToolUse) {
-      cfg.hooks.PreToolUse = cfg.hooks.PreToolUse.filter((e) => !isOurGuardEntry(e));
-      if (cfg.hooks.PreToolUse.length === 0) delete cfg.hooks.PreToolUse;
-    }
-    if (Object.keys(cfg.hooks).length === 0) delete cfg.hooks;
-    return;
-  }
-  cfg.hooks.PreToolUse = cfg.hooks.PreToolUse || [];
-  cfg.hooks.PreToolUse = cfg.hooks.PreToolUse.filter((e) => !isOurGuardEntry(e)); // idempotent
-  cfg.hooks.PreToolUse.push(guardEntry(matcher));
-}
-
 function usageEntry() {
   return {
     hooks: [
@@ -407,7 +354,7 @@ function applyProviderUsage(cfg, { remove }) {
   if (Object.keys(cfg.hooks).length === 0) delete cfg.hooks;
 }
 
-// ---- Claude: statusLine (backed up in _agentTools) + guard hook. ----
+// ---- Claude: statusLine backed up in _agentTools. ----
 
 function runClaude(opts) {
   const settings = opts.settings || path.join(os.homedir(), ".claude", "settings.json");
@@ -440,18 +387,6 @@ function runClaude(opts) {
     }
   }
 
-  if (wants(opts, "guard")) {
-    if (opts.uninstall) {
-      applyGuard(cfg, { remove: true });
-      delete managed.guard;
-      console.log("  - guard");
-    } else {
-      applyGuard(cfg, { matcher: "Bash" });
-      managed.guard = { event: "PreToolUse", matcher: "Bash" };
-      console.log("  + guard (PreToolUse Bash)");
-    }
-  }
-
   if (Object.keys(managed).length === 0) delete cfg[META_KEY];
   writeJson(settings, cfg, opts.dryRun);
 }
@@ -461,24 +396,13 @@ function runClaude(opts) {
 // command signature instead. ----
 
 function runCodex(opts) {
-  if (!wants(opts, "guard") && !wants(opts, "usage")) {
-    console.log("codex: nothing to do (supports: guard, usage).");
+  if (!wants(opts, "usage")) {
+    console.log("codex: nothing to do (supports: usage).");
     return;
   }
   const file = opts.codexHooks || path.join(os.homedir(), ".codex", "hooks.json");
   console.log(`codex (global): ${file}`);
   const cfg = readJson(file);
-
-  if (wants(opts, "guard")) {
-    if (opts.uninstall) {
-      applyGuard(cfg, { remove: true });
-      console.log("  - guard");
-    } else {
-      // Codex matches the tool name (normalized to "Bash") as a regex.
-      applyGuard(cfg, { matcher: "^Bash$" });
-      console.log("  + guard (PreToolUse Bash)");
-    }
-  }
 
   if (wants(opts, "usage")) {
     if (opts.uninstall) {
@@ -505,58 +429,7 @@ function runCodex(opts) {
   }
 }
 
-// ---- opencode: guard as a JS plugin. opencode has no declarative hook config;
-// it auto-discovers plugin files from `{plugin,plugins}/*.{ts,js}` in its config
-// dir. We drop a tiny generated `.js` stub there that re-exports the repo plugin
-// (hooks/opencode/guard.mjs) by absolute file:// URL — so opencode loads it via
-// its documented discovery path, we never touch opencode.json (avoiding JSONC
-// parsing), the rules stay single-source in the repo, and repo edits are live.
-// Note the stub MUST be `.js` (the discovery glob is *.{ts,js}, not .mjs). ----
-
-const OPENCODE_STUB_NAME = "agent-tools-guard.js";
-
-function opencodePluginDir(opts) {
-  return (
-    opts.opencodePluginDir || path.join(os.homedir(), ".config", "opencode", "plugin")
-  );
-}
-
-function runOpencode(opts) {
-  if (!wants(opts, "guard")) {
-    console.log("opencode: nothing to do (only supports: guard).");
-    return;
-  }
-  const dir = opencodePluginDir(opts);
-  const stub = path.join(dir, OPENCODE_STUB_NAME);
-  console.log(`opencode (global): ${stub}`);
-
-  if (opts.uninstall) {
-    if (fs.existsSync(stub)) removeFile(stub, opts.dryRun);
-    else console.log("  no agent-tools plugin found; nothing to remove.");
-    return;
-  }
-
-  const target = pathToFileURL(RUNTIME.opencodeGuard).href;
-  const contents =
-    `// Generated by agent-tools installer — do not edit.\n` +
-    `// Re-exports the installed guard plugin so opencode discovers it here.\n` +
-    `export { AgentToolsGuard } from ${JSON.stringify(target)};\n`;
-
-  if (opts.dryRun) {
-    console.log(`  [dry-run] would write ${stub}:`);
-    console.log(contents.split("\n").map((l) => "    " + l).join("\n"));
-  } else {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(stub, contents);
-    console.log("  + guard (plugin stub)");
-    console.log(
-      "  NOTE: restart opencode to load the plugin. It does not cover subagent " +
-        "`task`-tool calls (known opencode gap #5894)."
-    );
-  }
-}
-
-const AGENTS = { claude: runClaude, codex: runCodex, opencode: runOpencode };
+const AGENTS = { claude: runClaude, codex: runCodex };
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
