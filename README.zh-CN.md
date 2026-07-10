@@ -53,11 +53,11 @@ npx -y skills@latest add kairyou/agent-tools --skill at-simplify -g -y
 
 ```bash
 # 安装或更新
-npx -y github:kairyou/agent-tools statusline -a claude
+npx -y @kairyou/agent-tools@latest statusline -a claude
 
 # 预览或卸载
-npx -y github:kairyou/agent-tools statusline -a claude --dry-run
-npx -y github:kairyou/agent-tools statusline -a claude --uninstall
+npx -y @kairyou/agent-tools@latest statusline -a claude --dry-run
+npx -y @kairyou/agent-tools@latest statusline -a claude --uninstall
 ```
 
 安装器会把 `statusLine` 写入 `~/.claude/settings.json`. 默认显示:
@@ -78,11 +78,11 @@ npx -y github:kairyou/agent-tools statusline -a claude --uninstall
 
 ```bash
 # 安装或更新
-npx -y github:kairyou/agent-tools usage -a codex
+npx -y @kairyou/agent-tools@latest usage -a codex
 
 # 预览或卸载
-npx -y github:kairyou/agent-tools usage -a codex --dry-run
-npx -y github:kairyou/agent-tools usage -a codex --uninstall
+npx -y @kairyou/agent-tools@latest usage -a codex --dry-run
+npx -y @kairyou/agent-tools@latest usage -a codex --uninstall
 ```
 
 安装器会把 hook 添加到 `~/.codex/hooks.json` 的 `UserPromptSubmit` 和
@@ -107,11 +107,11 @@ warning: API | balance $362 | today $61.7 | 30d $566
 
 ```bash
 # 安装或更新
-npx -y github:kairyou/agent-tools usage -a opencode
+npx -y @kairyou/agent-tools@latest usage -a opencode
 
 # 预览或卸载
-npx -y github:kairyou/agent-tools usage -a opencode --dry-run
-npx -y github:kairyou/agent-tools usage -a opencode --uninstall
+npx -y @kairyou/agent-tools@latest usage -a opencode --dry-run
+npx -y @kairyou/agent-tools@latest usage -a opencode --uninstall
 ```
 
 安装器会添加全局 server plugin 和 TUI plugin. 当前 session 进入 idle 后, server
@@ -129,6 +129,14 @@ balance $244 | today $45.8 | 30d $604
 
 余额, 额度和套餐用量查询支持兼容 Sub2API-like,
 NewAPI/OneAPI/OneHub/DoneHub/Veloera/AnyRouter-like 与 OpenRouter 的网关.
+
+### 从 Git 运行
+
+如需直接使用仓库版本，可将 npm 包名替换为 `github:kairyou/agent-tools`（本机需已安装 Git）：
+
+```bash
+npx -y github:kairyou/agent-tools usage -a codex
+```
 
 ## FAQ
 

@@ -55,11 +55,11 @@ Pass multiple skills after `--skill`, for example `--skill at-commit at-review a
 
 ```bash
 # Install or update
-npx -y github:kairyou/agent-tools statusline -a claude
+npx -y @kairyou/agent-tools@latest statusline -a claude
 
 # Preview or uninstall
-npx -y github:kairyou/agent-tools statusline -a claude --dry-run
-npx -y github:kairyou/agent-tools statusline -a claude --uninstall
+npx -y @kairyou/agent-tools@latest statusline -a claude --dry-run
+npx -y @kairyou/agent-tools@latest statusline -a claude --uninstall
 ```
 
 The installer writes `statusLine` to `~/.claude/settings.json`. The default
@@ -82,11 +82,11 @@ it preserves top-of-file comments and existing values.
 
 ```bash
 # Install or update
-npx -y github:kairyou/agent-tools usage -a codex
+npx -y @kairyou/agent-tools@latest usage -a codex
 
 # Preview or uninstall
-npx -y github:kairyou/agent-tools usage -a codex --dry-run
-npx -y github:kairyou/agent-tools usage -a codex --uninstall
+npx -y @kairyou/agent-tools@latest usage -a codex --dry-run
+npx -y @kairyou/agent-tools@latest usage -a codex --uninstall
 ```
 
 The installer adds the hook to `UserPromptSubmit` and `Stop` in
@@ -112,11 +112,11 @@ the plan expiry; `balance` is wallet credit; `today` and `30d` are API spend.
 
 ```bash
 # Install or update
-npx -y github:kairyou/agent-tools usage -a opencode
+npx -y @kairyou/agent-tools@latest usage -a opencode
 
 # Preview or uninstall
-npx -y github:kairyou/agent-tools usage -a opencode --dry-run
-npx -y github:kairyou/agent-tools usage -a opencode --uninstall
+npx -y @kairyou/agent-tools@latest usage -a opencode --dry-run
+npx -y @kairyou/agent-tools@latest usage -a opencode --uninstall
 ```
 
 The installer adds global server and TUI plugins. After the active session
@@ -135,6 +135,15 @@ balance $244 | today $45.8 | 30d $604
 
 Balance, quota, and plan usage queries support compatible Sub2API-like,
 NewAPI/OneAPI/OneHub/DoneHub/Veloera/AnyRouter-like, and OpenRouter gateways.
+
+### Run from Git
+
+To run directly from the repository, replace the npm package name with
+`github:kairyou/agent-tools` (Git required):
+
+```bash
+npx -y github:kairyou/agent-tools usage -a codex
+```
 
 ## FAQ
 
