@@ -153,13 +153,13 @@ npx -y github:kairyou/agent-tools usage -a codex
 PromptScript agent does not support global installation. It does not affect
 other agents and can be ignored. See [`skills` issue #1352](https://github.com/vercel-labs/skills/issues/1352).
 
+## References
+
+- [OpenCommit](https://github.com/di-sukharev/opencommit)
+- [GitLens](https://github.com/gitkraken/vscode-gitlens)
+- [claude-code-system-prompts](https://github.com/Piebald-AI/claude-code-system-prompts)
+
 ## Notes
 
-- `skills/` contains reusable `SKILL.md` capabilities.
-- `hooks/` keeps stable ownership directories for shared and agent-specific integrations.
-- `plugins/` contains runtime plugin implementations such as opencode usage.
-- `statusline/claude/` contains the command-backed Claude statusLine script.
-- `lib/` contains shared implementation such as API usage query logic.
 - The installer marks and removes only the config entries it owns.
-
-Run local checks with `npm test`.
+- Run local checks with `npm test`.

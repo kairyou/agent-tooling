@@ -145,13 +145,13 @@ npx -y github:kairyou/agent-tools usage -a codex
 `PromptScript does not support global skill installation` 表示 PromptScript Agent 不支持全局
 安装，不影响其他 Agent，可忽略。参见 [`skills` issue #1352](https://github.com/vercel-labs/skills/issues/1352)。
 
+## References
+
+- [OpenCommit](https://github.com/di-sukharev/opencommit)
+- [GitLens](https://github.com/gitkraken/vscode-gitlens)
+- [claude-code-system-prompts](https://github.com/Piebald-AI/claude-code-system-prompts)
+
 ## 说明
 
-- `skills/` 放可复用的 `SKILL.md` 能力。项目可以只安装自己需要的 skills。
-- `hooks/` 按通用逻辑和各 agent 适配实现划分目录。
-- `plugins/` 放 opencode usage 等 runtime plugin 实现.
-- `statusline/claude/` 放 Claude command-backed statusLine 脚本。
-- `lib/` 放 API usage 查询等共享实现。
 - 安装器只标记并移除自己写入的配置项。
-
-本地检查运行 `npm test`。
+- 本地检查运行 `npm test`。

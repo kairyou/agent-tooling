@@ -5,12 +5,6 @@ description: "Generate a Conventional Commits message from staged changes and wa
 
 # Commit Message Generator
 
-<!--
-References (background only; rules in this file are authoritative):
-- OpenCommit
-- GitLens generateCommitMessage
--->
-
 ## Workflow
 
 1. Run `git diff --staged` to inspect staged changes. If it is empty, tell the user to run `git add` first and stop.
