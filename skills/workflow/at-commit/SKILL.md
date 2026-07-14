@@ -10,8 +10,8 @@ argument-hint: "[<language>]"
 
 1. Run `git diff --staged` to inspect staged changes. If it is empty, tell the user to run `git add` first and stop.
 2. Determine the description language using the Language Policy below.
-3. Generate a message using the rules below and show it for confirmation. Do not commit immediately. When useful, provide concrete candidate messages instead of only asking a question.
-4. Run `git commit -m` only after the user explicitly confirms, for example with "commit" or "ok". Do not run `git push` unless the user explicitly asks.
+3. Generate the message(s) and show them for confirmation; do not commit immediately. When more than one framing is reasonable, present them as a short numbered list (`1)`, `2)`, …) so the user can pick by replying with just the number. A single clear message may be shown on its own. The user may also reply with an edit or their own wording.
+4. Run `git commit -m` only after the user picks or explicitly confirms — a number from the list, "commit", or "ok" all count. Do not run `git push` unless the user explicitly asks.
 
 ## Language Policy
 
