@@ -34,12 +34,16 @@ agent-tools/
 npx -y skills@latest add kairyou/agent-tools --list
 
 # Install globally (pass one or more names after --skill)
-npx -y skills@latest add kairyou/agent-tools --skill at-commit at-review at-simplify at-zentao -g -y
+npx -y skills@latest add kairyou/agent-tools --skill <name...> -g -y
 ```
 
 ### at-commit
 
 Generate a Conventional Commits message from staged changes and wait for user confirmation before committing.
+
+```bash
+npx -y skills@latest add kairyou/agent-tools --skill at-commit -g -y
+```
 
 - Usage: `/at-commit [<language>]` — language for the commit description (Conventional Commits tokens stay in English)
 
@@ -47,17 +51,29 @@ Generate a Conventional Commits message from staged changes and wait for user co
 
 Review changes for correctness bugs, regressions, convention violations, and high-value cleanup findings.
 
+```bash
+npx -y skills@latest add kairyou/agent-tools --skill at-review -g -y
+```
+
 - Usage: `/at-review [--fix] [<pr|branch|path>]` — reports findings; `--fix` also applies them
 
 ### at-simplify
 
 Refactor changes to reduce duplication, lower complexity, and improve code quality.
 
+```bash
+npx -y skills@latest add kairyou/agent-tools --skill at-simplify -g -y
+```
+
 - Usage: `/at-simplify [<pr|branch|path>]`
 
 ### at-zentao
 
 Work ZenTao (禅道) bugs/tasks end to end: fix, verify, stage; asks before committing and before writing status back.
+
+```bash
+npx -y skills@latest add kairyou/agent-tools --skill at-zentao -g -y
+```
 
 Usage:
 

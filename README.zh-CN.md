@@ -32,12 +32,16 @@ agent-tools/
 npx -y skills@latest add kairyou/agent-tools --list
 
 # 全局安装(--skill 后面可以跟一个或多个名字)
-npx -y skills@latest add kairyou/agent-tools --skill at-commit at-review at-simplify at-zentao -g -y
+npx -y skills@latest add kairyou/agent-tools --skill <name...> -g -y
 ```
 
 ### at-commit
 
 根据暂存区改动生成 Conventional Commits message, 并在提交前等待用户确认.
+
+```bash
+npx -y skills@latest add kairyou/agent-tools --skill at-commit -g -y
+```
 
 - 用法: `/at-commit [<语言>]` — 指定 commit description 的语言(Conventional Commits 语法部分保持英文)
 
@@ -45,17 +49,29 @@ npx -y skills@latest add kairyou/agent-tools --skill at-commit at-review at-simp
 
 审查改动中的正确性 bug, 回归风险, 约定违规和高价值清理项.
 
+```bash
+npx -y skills@latest add kairyou/agent-tools --skill at-review -g -y
+```
+
 - 用法: `/at-review [--fix] [<pr|分支|路径>]` — 输出审查结果; 加 `--fix` 则同时应用修复
 
 ### at-simplify
 
 重构改动, 减少冗余, 降低复杂度, 提升代码质量.
 
+```bash
+npx -y skills@latest add kairyou/agent-tools --skill at-simplify -g -y
+```
+
 - 用法: `/at-simplify [<pr|分支|路径>]`
 
 ### at-zentao
 
 读取禅道 bug/task 并端到端处理: 修复, 验证, 暂存; 提交和回写状态前均需确认.
+
+```bash
+npx -y skills@latest add kairyou/agent-tools --skill at-zentao -g -y
+```
 
 用法:
 
