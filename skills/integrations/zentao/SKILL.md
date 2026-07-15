@@ -8,7 +8,7 @@ argument-hint: "bug <id> | task <id> | bugs | tasks | export bug|task <id>"
 
 ## Configuration
 
-Primary config lives in `~/.agent-tools/config.jsonc` under a `zentao` key:
+Primary config lives under a `zentao` key in `~/.agent-tools/config.jsonc` — or `$AGENT_TOOLS_HOME/config.jsonc` when `AGENT_TOOLS_HOME` is set, matching the rest of agent-tools. Every `~/.agent-tools/config.jsonc` below means this resolved path:
 
 ```jsonc
 {
@@ -22,12 +22,14 @@ Primary config lives in `~/.agent-tools/config.jsonc` under a `zentao` key:
 
 Resolution order (first match wins):
 
-- URL: env `ZENTAO_URL` → `zentao.url` in the repository's `.agent-tools/config.jsonc` → `zentao.url` in `~/.agent-tools/config.jsonc`.
-- Credentials: env `ZENTAO_ACCOUNT`/`ZENTAO_PASSWORD` → `zentao.account`/`zentao.password` in `~/.agent-tools/config.jsonc`. NEVER read or write credentials in a repository-level config (it may be committed).
+- URL: env `ZENTAO_URL` → `zentao.url` in `~/.agent-tools/config.jsonc`.
+- Credentials: env `ZENTAO_ACCOUNT`/`ZENTAO_PASSWORD` → `zentao.account`/`zentao.password` in `~/.agent-tools/config.jsonc`.
+
+ZenTao config comes ONLY from env vars and the global `~/.agent-tools/config.jsonc`, never a repository-level file — so an untrusted repo can't redirect the endpoint to capture your credentials.
 
 **First-run setup** (when config is missing or incomplete):
 
-1. If `~/.agent-tools/config.jsonc` has no `zentao` block, append one — it is JSONC, so preserve all existing content and comments:
+1. If `~/.agent-tools/config.jsonc` has no `zentao` block, insert one INTO the root object (not appended after the closing `}`) — it is JSONC, so preserve existing keys and comments, and mind the trailing comma:
    `"zentao": { "url": "", "account": "", "password": "" }`
 2. Ask for the URL and account as a PLAIN chat question and wait for the reply — never collect free-form values via a multiple-choice prompt (its fixed option labels would be submitted as the answer). Write the reply into the config — these are not secrets.
 3. NEVER ask the user to paste the password into the chat (it would persist in transcripts). Tell them — in the same message as step 2 — to fill `zentao.password` in the file themselves or set env `ZENTAO_PASSWORD`, and to say "done" when finished.
@@ -65,7 +67,7 @@ All requests send the `Token: <token>` header — it works for both endpoint fam
 
 - `GET /my-work-bug.json` — bugs assigned to the configured account
 - `GET /my-work-task.json` — tasks assigned to the configured account
-- Response shape: `{"status":"success","data":"<JSON-encoded string>"}` — the `data` field is a STRING containing JSON (with `\uXXXX` escapes), so decode it a second time. Bugs are in `.bugs[]` (fields: `id`, `title`, `severity`, `pri`, `status`, `project`, `product`), tasks in `.tasks[]`. The first page is enough for normal use; pager info inside `data` tells if there are more.
+- Response shape: `{"status":"success","data":"<JSON-encoded string>"}` — the `data` field is a STRING containing JSON (with `\uXXXX` escapes), so decode it a second time. Bugs are in `.bugs[]` (fields: `id`, `title`, `severity`, `pri`, `status`, `project`, `product`), tasks in `.tasks[]`. The first page usually suffices, but read the pager info inside `data` for the total — if there are more pages, tell the user (e.g. "showing 20 of 45; say more to load the rest") instead of silently truncating, and fetch further pages only on request.
 
 **Details and write-back** (REST v1):
 
@@ -108,14 +110,14 @@ Do NOT browse via products/projects — always start from the my-work lists or a
 3. **Locate the code** — search the current project for the relevant code and explain how it was identified.
 4. **Fix** — change only what this bug/task requires; no unrelated cleanups.
 5. **Verify** — proportionate to the change: run the narrowest check that exercises it (the affected tests, a targeted build/typecheck of the touched module — not a full build for a one-line fix). If the bug is reproducible from code, reproduce it before the fix and confirm it is gone after. Use the project's verify skill if one exists. For changes machines can't judge (UI/visual/interaction), say so honestly — state what WAS checked (compiles, tests pass) and that the visual result needs the user's eyes; the user verifies via the "not yet" path at the commit step. Never present an unverifiable change as verified. A failed check must not proceed to the next step.
-6. **git add** — stage only the files changed for THIS item, listing them explicitly (never `git add -A`).
+6. **git add** — first run `git diff --staged --name-only`; if the index already holds unrelated changes, STOP and ask the user (commit those separately / unstage them / proceed anyway) so the `bug#<id>` commit isn't polluted. Then stage only the files changed for THIS item, listing them explicitly (never `git add -A`).
 7. **Ask whether to commit** (never commit automatically):
    - 1) Commit — generate and show a Conventional Commits message, following all at-commit conventions (language policy, ≤74-char single-line title). Right after `type(scope):`, add the ZenTao link token — `bug#<id>` or `task#<id>` — e.g. `fix(<scope>): bug#30887 <desc>` (scope optional). Rewrite the description from the diff rather than copying the title, keeping the title's domain terms.
    - 2) Not yet — keep the changes staged and continue
    - 3) Needs adjustment — take the feedback and return to step 4
-8. **Ask whether to update ZenTao** (never change status automatically). First DRAFT the write-back, then show it in the confirmation question:
+8. **Ask whether to update ZenTao** (never change status automatically). First DRAFT the write-back, then show it in the confirmation question. If the item was NOT committed (you chose "Not yet" at step 7), do not draft a `fixed` resolution or a commit hash — at most a comment with the status left unchanged, since a `fixed` write-back must reference a real commit:
    - **Resolution** — pick the value that matches what actually happened (ZenTao's enum): `fixed` 已解决 (default after a code fix), `notrepro` 无法重现, `duplicate` 重复Bug (needs the duplicate bug id), `bydesign` 设计如此, `external` 外部原因, `postponed` 延期处理, `willnotfix` 不予解决. If investigation showed the bug needs no code fix, propose the fitting non-`fixed` resolution instead.
-   - **Comment** — one sentence: root cause + change summary, plus the commit hash. Don't list files or expand into narrative.
+   - **Comment** — one sentence: root cause + change summary, plus the commit hash if committed. Don't list files or expand into narrative.
    - Options (reply with a number): 1) Submit  2) Edit first  3) Comment only (no status change).
    - **For tasks**, default to adding a comment only (drafted the same way). Offer "finish" ONLY for simple tasks completable in one sitting — it asks the user for hours (`currentConsumed`) and submits once. For multi-day tasks or teams that log per-day workhours, do NOT attempt finish via API; post the comment and point the user to the web UI's 记录工时/完成 forms, which handle per-day entries properly.
 

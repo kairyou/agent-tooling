@@ -132,7 +132,7 @@ function normalizeField(field) {
 }
 
 function mergeConfig(cli) {
-  const rootConfig = readJsonFile(process.env.AGENT_TOOLS_CONFIG || DEFAULT_CONFIG_FILE);
+  const rootConfig = readJsonFile(DEFAULT_CONFIG_FILE);
   const fileConfig = rootConfig.statusline || {};
   const envFields = process.env.AGENT_TOOLS_STATUSLINE_FIELDS;
   const envSeparator = process.env.AGENT_TOOLS_STATUSLINE_SEPARATOR;

@@ -85,7 +85,7 @@ Ranked most-severe first. If more than 10 survive, keep the 10 most severe. If n
 
 ## Applying fixes (--fix)
 
-The `--fix` flag was passed. After producing the findings list, apply the
+Only apply anything when `--fix` was passed. After producing the findings list, apply the
 findings to the working tree instead of stopping at the report: fix each one
 directly — correctness bugs and reuse/simplification/efficiency cleanups alike.
 Skip any finding whose fix would change intended behavior, require changes well

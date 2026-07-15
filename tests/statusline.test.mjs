@@ -40,7 +40,6 @@ test("Claude statusline renders configured fields in configured order", () => {
     env: {
       ...process.env,
       AGENT_TOOLS_HOME: temp,
-      AGENT_TOOLS_CONFIG: configFile,
       AGENT_TOOLS_USAGE_REFRESH: "0",
       ANTHROPIC_BASE_URL: "",
       PROVIDER_USAGE_BASE_URL: "",
@@ -66,7 +65,7 @@ test("Claude statusline keeps empty official rate limit placeholders", () => {
     input: JSON.stringify({ model: { display_name: "Claude Sonnet 4.5" } }),
     env: {
       ...process.env,
-      AGENT_TOOLS_CONFIG: configFile,
+      AGENT_TOOLS_HOME: temp,
       ANTHROPIC_BASE_URL: "",
       PROVIDER_USAGE_BASE_URL: "",
       AGENT_TOOLS_USAGE_REFRESH: "0",
@@ -92,7 +91,7 @@ test("Claude statusline hides empty rate limit placeholders for relay base URLs"
     input: JSON.stringify({ model: { display_name: "Claude Sonnet 4.5" } }),
     env: {
       ...process.env,
-      AGENT_TOOLS_CONFIG: configFile,
+      AGENT_TOOLS_HOME: temp,
       ANTHROPIC_BASE_URL: "https://relay.example.com/v1",
       PROVIDER_USAGE_BASE_URL: "",
       AGENT_TOOLS_USAGE_REFRESH: "0",
@@ -109,7 +108,7 @@ test("Claude statusline appends relay usage snapshot", () => {
   const temp = mkdtempSync(join(tmpdir(), "agent-tools-statusline-"));
   const agentHome = join(temp, "agent");
   const cacheDir = join(agentHome, "cache");
-  const configFile = join(temp, "config.jsonc");
+  const configFile = join(agentHome, "config.jsonc");
   mkdirSync(cacheDir, { recursive: true });
   writeFileSync(configFile, JSON.stringify({
     statusline: {
@@ -133,7 +132,6 @@ test("Claude statusline appends relay usage snapshot", () => {
     env: {
       ...process.env,
       AGENT_TOOLS_HOME: agentHome,
-      AGENT_TOOLS_CONFIG: configFile,
       ANTHROPIC_BASE_URL: "https://relay.example.com/v1",
       PROVIDER_USAGE_BASE_URL: "",
       AGENT_TOOLS_USAGE_REFRESH: "0",
