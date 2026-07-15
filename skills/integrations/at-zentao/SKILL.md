@@ -1,5 +1,5 @@
 ---
-name: zentao
+name: at-zentao
 description: "Work ZenTao bugs/tasks end to end: fetch details, confirm understanding, fix, verify, stage with git add, then ask before committing and before writing status back to ZenTao. Supports single items and sequential batches. Use when the user references ZenTao (禅道) bugs or tasks."
 argument-hint: "bug <id> | task <id> | bugs | tasks | export bug|task <id>"
 ---
@@ -53,11 +53,11 @@ If env `ZENTAO_TOKEN` is set, use it directly and skip the exchange (re-exchange
 
 ## Usage
 
-- `/zentao bug <id>` — handle a single bug
-- `/zentao task <id>` — handle a single task
-- `/zentao bugs` — list bugs assigned to the configured account; the user picks one or several (multiple = batch mode)
-- `/zentao tasks` — same for tasks
-- `/zentao export bug <id>` (or `export task <id>`) — export to a self-contained Markdown bundle for handoff; does NOT fix or write back (see Export mode)
+- `/at-zentao bug <id>` — handle a single bug
+- `/at-zentao task <id>` — handle a single task
+- `/at-zentao bugs` — list bugs assigned to the configured account; the user picks one or several (multiple = batch mode)
+- `/at-zentao tasks` — same for tasks
+- `/at-zentao export bug <id>` (or `export task <id>`) — export to a self-contained Markdown bundle for handoff; does NOT fix or write back (see Export mode)
 
 ## API endpoints (verified on ZenTao open source 18.12)
 

@@ -19,7 +19,7 @@ agent-tools/
 │   │   ├── at-review/   # Review changes for bugs and regressions.
 │   │   └── at-simplify/ # Reduce complexity and duplication in changes.
 │   └── integrations/  # Skills that integrate external systems.
-│       └── zentao/      # ZenTao bug/task fixing workflow.
+│       └── at-zentao/   # ZenTao bug/task fixing workflow.
 ├── statusline/        # Statusline scripts/templates, grouped by agent.
 │   └── claude/        # Claude command-backed statusLine script + example config.
 └── lib/               # Shared implementation used by hooks, statuslines, and installers.
@@ -34,7 +34,7 @@ agent-tools/
 npx -y skills@latest add kairyou/agent-tools --list
 
 # Install globally (pass one or more names after --skill)
-npx -y skills@latest add kairyou/agent-tools --skill at-commit at-review at-simplify zentao -g -y
+npx -y skills@latest add kairyou/agent-tools --skill at-commit at-review at-simplify at-zentao -g -y
 ```
 
 ### at-commit
@@ -55,16 +55,16 @@ Refactor changes to reduce duplication, lower complexity, and improve code quali
 
 - Usage: `/at-simplify [<pr|branch|path>]`
 
-### zentao
+### at-zentao
 
 Work ZenTao (禅道) bugs/tasks end to end: fix, verify, stage; asks before committing and before writing status back.
 
 Usage:
 
-- `/zentao bugs` — list bugs assigned to you (the configured account); pick one or several (several = batch mode)
-- `/zentao tasks` — same, for tasks
-- `/zentao bug <id>` — work a specific bug
-- `/zentao task <id>` — work a specific task
+- `/at-zentao bugs` — list bugs assigned to you (the configured account); pick one or several (several = batch mode)
+- `/at-zentao tasks` — same, for tasks
+- `/at-zentao bug <id>` — work a specific bug
+- `/at-zentao task <id>` — work a specific task
 
 Config: `~/.agent-tools/config.jsonc` → `"zentao": { "url", "account", "password" }`. First run guides you; fill `password` in the file yourself (or env `ZENTAO_PASSWORD`), never in chat.
 

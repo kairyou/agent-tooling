@@ -17,7 +17,7 @@ agent-tools/
 │   │   ├── at-review/   # 审查改动中的 bug 与回归风险.
 │   │   └── at-simplify/ # 减少改动中的冗余和复杂度.
 │   └── integrations/  # 对接外部系统的 skills。
-│       └── zentao/      # 禅道 bug/task 修复工作流.
+│       └── at-zentao/   # 禅道 bug/task 修复工作流.
 ├── statusline/        # Statusline 配置片段/模板，按 agent 分组。
 │   └── claude/        # Claude command-backed statusLine 脚本和示例配置。
 └── lib/               # hooks、statusline、installer 复用的共享实现。
@@ -32,7 +32,7 @@ agent-tools/
 npx -y skills@latest add kairyou/agent-tools --list
 
 # 全局安装(--skill 后面可以跟一个或多个名字)
-npx -y skills@latest add kairyou/agent-tools --skill at-commit at-review at-simplify zentao -g -y
+npx -y skills@latest add kairyou/agent-tools --skill at-commit at-review at-simplify at-zentao -g -y
 ```
 
 ### at-commit
@@ -53,16 +53,16 @@ npx -y skills@latest add kairyou/agent-tools --skill at-commit at-review at-simp
 
 - 用法: `/at-simplify [<pr|分支|路径>]`
 
-### zentao
+### at-zentao
 
 读取禅道 bug/task 并端到端处理: 修复, 验证, 暂存; 提交和回写状态前均需确认.
 
 用法:
 
-- `/zentao bugs` — 列出指派给你(配置的账号)的 bug, 挑一个或多个(多个 = 批量模式)
-- `/zentao tasks` — 同上, 任务清单
-- `/zentao bug <id>` — 直接处理指定 bug
-- `/zentao task <id>` — 直接处理指定 task
+- `/at-zentao bugs` — 列出指派给你(配置的账号)的 bug, 挑一个或多个(多个 = 批量模式)
+- `/at-zentao tasks` — 同上, 任务清单
+- `/at-zentao bug <id>` — 直接处理指定 bug
+- `/at-zentao task <id>` — 直接处理指定 task
 
 配置: `~/.agent-tools/config.jsonc` → `"zentao": { "url", "account", "password" }`. 首次使用会引导; `password` 自己填进文件(或设环境变量 `ZENTAO_PASSWORD`), 不要发在对话里.
 

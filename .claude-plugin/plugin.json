@@ -9,6 +9,6 @@
     "./skills/workflow/at-commit",
     "./skills/workflow/at-review",
     "./skills/workflow/at-simplify",
-    "./skills/integrations/zentao"
+    "./skills/integrations/at-zentao"
   ]
 }
