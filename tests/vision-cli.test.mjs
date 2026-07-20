@@ -112,3 +112,36 @@ test("request-file fallback keeps image paths and questions out of the shell com
   assert.match(receivedPrompt, /\$\(Get-Content secret\.txt\)/);
   assert.equal(JSON.parse(result.stdout).answers[0].question_id, "q-safe");
 });
+
+test("separate CLI fallback processes share the configured RPM limit", async (t) => {
+  const gateway = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { content: "Visible." } }] }));
+    });
+  });
+  await new Promise((resolveListen) => gateway.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => gateway.close());
+
+  const home = mkdtempSync(join(tmpdir(), "at-vision-cli-limit-"));
+  const image = join(home, "shot.png");
+  writeFileSync(image, PNG);
+  writeFileSync(
+    join(home, "config.jsonc"),
+    JSON.stringify({
+      vision: {
+        provider: "openai-compatible",
+        baseUrl: `http://127.0.0.1:${gateway.address().port}/v1`,
+        model: "fake-vlm",
+        maxRequestsPerMinute: 1,
+      },
+    })
+  );
+
+  const first = await runCli([image, "-q", "What is visible?", "--json"], { AGENT_TOOLS_HOME: home });
+  assert.equal(first.code, 0, first.stderr);
+  const second = await runCli([image, "-q", "What is visible?", "--json"], { AGENT_TOOLS_HOME: home });
+  assert.equal(second.code, 1);
+  assert.match(second.stderr, /rate_limit_error/);
+});

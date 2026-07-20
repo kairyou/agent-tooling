@@ -22,7 +22,6 @@ function runInstall(args, env = {}) {
     env: {
       ...process.env,
       AGENT_TOOLS_HOME: FALLBACK_HOME,
-      AGENT_TOOLS_VISION_SKIP_DEPS: "1",
       ...env,
     },
     encoding: "utf8",
@@ -36,7 +35,7 @@ function tmp() {
 }
 
 function runtimeServerPath(home) {
-  return join(home, "vision-runtime", "plugins", "vision", "mcp-server.mjs").replace(/\\/g, "/");
+  return join(home, "vision-runtime", "mcp-server.mjs").replace(/\\/g, "/");
 }
 
 // ---- claude ----
@@ -69,13 +68,11 @@ test("claude vision install/uninstall manages ~/.claude.json, the runtime, and t
   );
   assert.ok(existsSync(join(skillsDir, "at-vision", SKILL_MARKER)));
   // Runtime copied into AGENT_TOOLS_HOME with a deps manifest.
-  assert.ok(existsSync(join(home, "vision-runtime", "plugins", "vision", "mcp-server.mjs")));
-  assert.ok(existsSync(join(home, "vision-runtime", "lib", "vision", "inspect.mjs")));
-  assert.ok(existsSync(join(home, "vision-runtime", "lib", "vision", "cli.mjs")));
-  const runtimePkg = JSON.parse(readFileSync(join(home, "vision-runtime", "package.json"), "utf8"));
-  assert.ok(runtimePkg.dependencies["@modelcontextprotocol/sdk"]);
-  assert.ok(runtimePkg.dependencies.zod);
-  assert.ok(runtimePkg.dependencies["jsonc-parser"]);
+  assert.ok(existsSync(join(home, "vision-runtime", "mcp-server.mjs")));
+  assert.ok(existsSync(join(home, "vision-runtime", "cli.mjs")));
+  const runtimeMeta = JSON.parse(readFileSync(join(home, "vision-runtime", "runtime.json"), "utf8"));
+  assert.equal(runtimeMeta.owner, "@kairyou/agent-tools");
+  assert.ok(!existsSync(join(home, "vision-runtime", "node_modules")));
 
   // Reinstall is idempotent.
   runInstall(args, env);
@@ -88,6 +85,51 @@ test("claude vision install/uninstall manages ~/.claude.json, the runtime, and t
   assert.equal(cfg.mcpServers.other.command, "keep-me");
   assert.equal(cfg.someState, 42);
   assert.ok(!existsSync(join(skillsDir, "at-vision")));
+  assert.ok(!existsSync(join(home, "vision-runtime")));
+});
+
+test("claude vision preserves an unmanaged same-name MCP entry", () => {
+  const dir = tmp();
+  const home = join(dir, "agent-tools-home");
+  const claudeJson = join(dir, "claude.json");
+  const manual = { type: "stdio", command: "node", args: ["custom-server.mjs"] };
+  writeFileSync(claudeJson, JSON.stringify({ mcpServers: { "agent-tools-vision": manual } }));
+  const args = [
+    "vision", "-a", "claude",
+    "--claude-json", claudeJson,
+    "--claude-skills-dir", join(dir, "skills"),
+  ];
+
+  const install = spawnSync(process.execPath, [INSTALL_SCRIPT, ...args], {
+    cwd: ROOT,
+    env: { ...process.env, AGENT_TOOLS_HOME: home },
+    encoding: "utf8",
+  });
+  assert.notEqual(install.status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(claudeJson, "utf8")).mcpServers["agent-tools-vision"], manual);
+
+  runInstall([...args, "--uninstall"]);
+  assert.deepEqual(JSON.parse(readFileSync(claudeJson, "utf8")).mcpServers["agent-tools-vision"], manual);
+});
+
+test("claude vision migrates the installer-owned legacy runtime path", () => {
+  const dir = tmp();
+  const home = join(dir, "agent-tools-home");
+  const claudeJson = join(dir, "claude.json");
+  const legacy = join(home, "vision-runtime", "plugins", "vision", "mcp-server.mjs").replace(/\\/g, "/");
+  writeFileSync(
+    claudeJson,
+    JSON.stringify({ mcpServers: { "agent-tools-vision": { type: "stdio", command: "node", args: [legacy] } } })
+  );
+
+  runInstall([
+    "vision", "-a", "claude",
+    "--claude-json", claudeJson,
+    "--claude-skills-dir", join(dir, "skills"),
+  ], { AGENT_TOOLS_HOME: home });
+
+  const installed = JSON.parse(readFileSync(claudeJson, "utf8")).mcpServers["agent-tools-vision"];
+  assert.deepEqual(installed.args, [runtimeServerPath(home)]);
 });
 
 // ---- codex ----
@@ -106,7 +148,7 @@ test("codex vision manages a marker block in config.toml without touching other 
   assert.match(text, /\[mcp_servers\.existing\]/);
   assert.match(text, /# >>> agent-tools vision >>>/);
   assert.match(text, /\[mcp_servers\.agent-tools-vision\]/);
-  assert.match(text, /vision-runtime[/\\]plugins[/\\]vision[/\\]mcp-server\.mjs/);
+  assert.match(text, /vision-runtime[/\\]mcp-server\.mjs/);
   assert.ok(existsSync(join(skillsDir, "at-vision", "SKILL.md")));
 
   // Reinstall does not duplicate the block.
@@ -152,7 +194,6 @@ test("vision refuses to overwrite an unowned skill and preserves it on uninstall
   const env = {
     ...process.env,
     AGENT_TOOLS_HOME: join(dir, "agent-tools-home"),
-    AGENT_TOOLS_VISION_SKIP_DEPS: "1",
   };
 
   const install = spawnSync(process.execPath, [INSTALL_SCRIPT, ...args], {
@@ -206,12 +247,12 @@ test("vision skill embeds the installed CLI path for a custom runtime home", () 
   ], { AGENT_TOOLS_HOME: home });
 
   const skill = readFileSync(join(skillsDir, "at-vision", "SKILL.md"), "utf8");
-  const expected = join(home, "vision-runtime", "lib", "vision", "cli.mjs").replace(/\\/g, "/");
+  const expected = join(home, "vision-runtime", "cli.mjs").replace(/\\/g, "/");
   assert.match(skill, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(skill, /\{\{VISION_CLI_PATH\}\}/);
 });
 
-test("vision update clean-syncs owned runtime sources while preserving node_modules", () => {
+test("vision update atomically replaces the bundled runtime", () => {
   const dir = tmp();
   const home = join(dir, "agent-tools-home");
   const skillsDir = join(dir, "skills");
@@ -222,20 +263,43 @@ test("vision update clean-syncs owned runtime sources while preserving node_modu
   ];
   runInstall(args, { AGENT_TOOLS_HOME: home });
 
-  const staleLib = join(home, "vision-runtime", "lib", "vision", "removed-in-update.mjs");
-  const stalePlugin = join(home, "vision-runtime", "plugins", "vision", "removed-in-update.mjs");
-  const dependency = join(home, "vision-runtime", "node_modules", "kept-package", "index.js");
+  const staleRuntime = join(home, "vision-runtime", "removed-in-update.mjs");
   const staleSkill = join(skillsDir, "at-vision", "removed-in-update.md");
-  for (const file of [staleLib, stalePlugin, dependency, staleSkill]) {
+  for (const file of [staleRuntime, staleSkill]) {
     mkdirSync(join(file, ".."), { recursive: true });
     writeFileSync(file, "stale\n");
   }
 
   runInstall(args, { AGENT_TOOLS_HOME: home });
-  assert.ok(!existsSync(staleLib));
-  assert.ok(!existsSync(stalePlugin));
+  assert.ok(!existsSync(staleRuntime));
   assert.ok(!existsSync(staleSkill));
-  assert.ok(existsSync(dependency));
+  assert.ok(existsSync(join(home, "vision-runtime", "mcp-server.mjs")));
+});
+
+test("vision runtime rollback preserves the previous install when the atomic swap fails", () => {
+  const dir = tmp();
+  const home = join(dir, "agent-tools-home");
+  const args = [
+    "vision", "-a", "codex",
+    "--codex-config", join(dir, "config.toml"),
+    "--codex-skills-dir", join(dir, "skills"),
+  ];
+  runInstall(args, { AGENT_TOOLS_HOME: home });
+  const sentinel = join(home, "vision-runtime", "previous-runtime.txt");
+  writeFileSync(sentinel, "still working\n");
+
+  const failed = spawnSync(process.execPath, [INSTALL_SCRIPT, ...args], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      AGENT_TOOLS_HOME: home,
+      AGENT_TOOLS_VISION_TEST_FAIL_SWAP: "1",
+    },
+    encoding: "utf8",
+  });
+  assert.notEqual(failed.status, 0);
+  assert.equal(readFileSync(sentinel, "utf8"), "still working\n");
+  assert.ok(existsSync(join(home, "vision-runtime", "mcp-server.mjs")));
 });
 
 test("codex vision refuses to install over a manually configured same-name table", () => {
@@ -252,7 +316,7 @@ test("codex vision refuses to install over a manually configured same-name table
     ],
     {
       cwd: ROOT,
-      env: { ...process.env, AGENT_TOOLS_HOME: FALLBACK_HOME, AGENT_TOOLS_VISION_SKIP_DEPS: "1" },
+      env: { ...process.env, AGENT_TOOLS_HOME: FALLBACK_HOME },
       encoding: "utf8",
     }
   );
@@ -300,13 +364,52 @@ test("opencode vision edits opencode.json in place, preserving comments", () => 
   assert.equal(cfg.theme, "dark");
   assert.ok(existsSync(join(dir, "skills", "at-vision", "SKILL.md")));
 
-  runInstall([...args, "--uninstall"]);
+  runInstall([...args, "--uninstall"], { AGENT_TOOLS_HOME: home });
   text = readFileSync(file, "utf8");
   assert.match(text, /\/\/ user comment stays/);
   cfg = parseJsonc(text);
   assert.equal(cfg.mcp["agent-tools-vision"], undefined);
   assert.deepEqual(cfg.mcp.other.command, ["keep"]);
   assert.ok(!existsSync(join(dir, "skills", "at-vision")));
+  assert.ok(!existsSync(join(home, "vision-runtime")));
+});
+
+test("opencode vision preserves an unmanaged same-name MCP entry", () => {
+  const dir = tmp();
+  const home = join(dir, "agent-tools-home");
+  const file = join(dir, "opencode.json");
+  const manual = { type: "local", command: ["node", "custom-server.mjs"], enabled: true };
+  writeFileSync(file, JSON.stringify({ mcp: { "agent-tools-vision": manual } }));
+  const args = ["vision", "-a", "opencode", "--opencode-config-dir", dir];
+
+  const install = spawnSync(process.execPath, [INSTALL_SCRIPT, ...args], {
+    cwd: ROOT,
+    env: { ...process.env, AGENT_TOOLS_HOME: home },
+    encoding: "utf8",
+  });
+  assert.notEqual(install.status, 0);
+  assert.deepEqual(parseJsonc(readFileSync(file, "utf8")).mcp["agent-tools-vision"], manual);
+
+  runInstall([...args, "--uninstall"], { AGENT_TOOLS_HOME: home });
+  assert.deepEqual(parseJsonc(readFileSync(file, "utf8")).mcp["agent-tools-vision"], manual);
+});
+
+test("opencode vision migrates the installer-owned legacy runtime path", () => {
+  const dir = tmp();
+  const home = join(dir, "agent-tools-home");
+  const file = join(dir, "opencode.json");
+  const legacy = join(home, "vision-runtime", "plugins", "vision", "mcp-server.mjs").replace(/\\/g, "/");
+  writeFileSync(
+    file,
+    JSON.stringify({ mcp: { "agent-tools-vision": { type: "local", command: ["node", legacy], enabled: true } } })
+  );
+
+  runInstall(["vision", "-a", "opencode", "--opencode-config-dir", dir], {
+    AGENT_TOOLS_HOME: home,
+  });
+
+  const installed = parseJsonc(readFileSync(file, "utf8")).mcp["agent-tools-vision"];
+  assert.deepEqual(installed.command, ["node", runtimeServerPath(home)]);
 });
 
 // ---- combined ----
@@ -327,6 +430,59 @@ test("one command installs all three agents", () => {
   assert.ok(existsSync(join(dir, "claude.json")));
   assert.ok(existsSync(join(dir, "config.toml")));
   assert.ok(existsSync(join(dir, "opencode", "opencode.json")));
+});
+
+test("vision uninstall keeps the shared runtime until its last agent reference is removed", () => {
+  const dir = tmp();
+  const home = join(dir, "agent-tools-home");
+  const codexConfig = join(dir, "config.toml");
+  const claudeJson = join(dir, "claude.json");
+  const common = [
+    "--codex-config", codexConfig,
+    "--codex-skills-dir", join(dir, "codex-skills"),
+    "--claude-json", claudeJson,
+    "--claude-skills-dir", join(dir, "claude-skills"),
+  ];
+  const env = { AGENT_TOOLS_HOME: home };
+
+  runInstall(["vision", "-a", "codex", "claude", ...common], env);
+  mkdirSync(join(home, "cache"), { recursive: true });
+  writeFileSync(join(home, "cache", "vision-rate-limit.json"), "{}\n");
+  runInstall(["vision", "-a", "claude", ...common, "--uninstall"], env);
+  assert.ok(existsSync(join(home, "vision-runtime")));
+  assert.ok(existsSync(join(home, "cache", "vision-rate-limit.json")));
+
+  runInstall(["vision", "-a", "codex", ...common, "--uninstall"], env);
+  assert.ok(!existsSync(join(home, "vision-runtime")));
+  assert.ok(!existsSync(join(home, "cache", "vision-rate-limit.json")));
+});
+
+test("vision cleanup recognizes a remaining Codex legacy runtime reference", () => {
+  const dir = tmp();
+  const home = join(dir, "agent-tools-home");
+  const codexConfig = join(dir, "config.toml");
+  const claudeJson = join(dir, "claude.json");
+  const common = [
+    "--codex-config", codexConfig,
+    "--codex-skills-dir", join(dir, "codex-skills"),
+    "--claude-json", claudeJson,
+    "--claude-skills-dir", join(dir, "claude-skills"),
+  ];
+  const env = { AGENT_TOOLS_HOME: home };
+
+  runInstall(["vision", "-a", "codex", "claude", ...common], env);
+  const current = join(home, "vision-runtime", "mcp-server.mjs").replace(/\\/g, "/");
+  const legacy = join(home, "vision-runtime", "plugins", "vision", "mcp-server.mjs").replace(
+    /\\/g,
+    "/"
+  );
+  writeFileSync(codexConfig, readFileSync(codexConfig, "utf8").replace(current, legacy));
+
+  runInstall(["vision", "-a", "claude", ...common, "--uninstall"], env);
+  assert.ok(existsSync(join(home, "vision-runtime")));
+
+  runInstall(["vision", "-a", "codex", ...common, "--uninstall"], env);
+  assert.ok(!existsSync(join(home, "vision-runtime")));
 });
 
 test("dry-run writes nothing", () => {

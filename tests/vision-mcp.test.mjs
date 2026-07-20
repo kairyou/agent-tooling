@@ -55,7 +55,26 @@ function startServer(home) {
     stdio: ["pipe", "pipe", "pipe"],
   });
   let buffer = "";
+  let stderr = "";
   const pending = new Map();
+  child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
+  function rejectPending(error) {
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(error);
+    }
+    pending.clear();
+  }
+  child.on("error", (error) => rejectPending(error));
+  child.on("exit", (code, signal) => {
+    if (pending.size === 0) return;
+    rejectPending(
+      new Error(
+        `vision MCP server exited before replying (code=${code}, signal=${signal})` +
+          (stderr.trim() ? `\n${stderr.trim()}` : "")
+      )
+    );
+  });
   child.stdout.on("data", (chunk) => {
     buffer += chunk.toString();
     let idx;
@@ -65,15 +84,24 @@ function startServer(home) {
       if (!line) continue;
       const msg = JSON.parse(line);
       if (msg.id !== undefined && pending.has(msg.id)) {
-        pending.get(msg.id)(msg);
+        const entry = pending.get(msg.id);
         pending.delete(msg.id);
+        clearTimeout(entry.timer);
+        entry.resolve(msg);
       }
     }
   });
   function request(id, method, params) {
     const reply = new Promise((resolveReply, reject) => {
-      pending.set(id, resolveReply);
-      setTimeout(() => reject(new Error(`timeout waiting for ${method}`)), 15000);
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(
+          new Error(
+            `timeout waiting for ${method}` + (stderr.trim() ? `\nMCP stderr:\n${stderr.trim()}` : "")
+          )
+        );
+      }, 15000);
+      pending.set(id, { resolve: resolveReply, reject, timer });
     });
     child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
     return reply;

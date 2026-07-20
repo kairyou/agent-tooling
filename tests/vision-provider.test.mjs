@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { test } from "node:test";
 import { createVisionService, QUESTION_LIMITS, validateQuestions } from "../lib/vision/inspect.mjs";
 import { inspectWithAnthropicCompatible } from "../lib/vision/providers/anthropic-compatible.mjs";
@@ -10,7 +11,11 @@ import { buildPrompt, normalizeAnswers } from "../lib/vision/providers/shared.mj
 import { createLimiter } from "../lib/vision/rate-limit.mjs";
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(8)]);
-const IMAGE = { bytes: PNG, mediaType: "image/png" };
+const IMAGE = {
+  byteLength: PNG.length,
+  mediaType: "image/png",
+  createReadStream: () => Readable.from([PNG.subarray(0, 1), PNG.subarray(1, 6), PNG.subarray(6)]),
+};
 const QUESTIONS = [
   { id: "q1", text: "What error code is shown?" },
   { id: "q2", text: "What color is the status light?" },
@@ -40,7 +45,13 @@ function openaiConfig(overrides = {}) {
 function fakeFetch(handler) {
   const calls = [];
   const impl = async (url, init) => {
-    calls.push({ url, init, body: JSON.parse(init.body) });
+    let bodyText = "";
+    if (typeof init.body === "string") {
+      bodyText = init.body;
+    } else {
+      for await (const chunk of init.body) bodyText += Buffer.from(chunk).toString("utf8");
+    }
+    calls.push({ url, init, bodyText, body: JSON.parse(bodyText) });
     return handler(calls.at(-1));
   };
   impl.calls = calls;
@@ -76,12 +87,17 @@ test("openai adapter sends bearer auth, data URI, and prompt with question ids",
   const call = fetchImpl.calls[0];
   assert.equal(call.url, "https://gw.example.com/v1/chat/completions");
   assert.equal(call.init.headers.authorization, "Bearer sk-secret-key");
+  assert.equal(Number(call.init.headers["content-length"]), Buffer.byteLength(call.bodyText));
   assert.equal(call.body.model, "vlm-1");
   assert.equal(call.body.max_tokens, 8192);
   const content = call.body.messages[0].content;
   assert.equal(content[0].type, "text");
   assert.match(content[0].text, /q1: What error code is shown\?/);
   assert.match(content[1].image_url.url, /^data:image\/png;base64,/);
+  assert.deepEqual(
+    Buffer.from(content[1].image_url.url.split(",", 2)[1], "base64"),
+    PNG
+  );
   assert.equal(answers.length, 2);
   assert.deepEqual(answers[0], {
     question_id: "q1",
@@ -102,10 +118,12 @@ test("anthropic adapter sends x-api-key, version header, and base64 image block"
   assert.equal(call.url, "https://gw.example.com/v1/messages");
   assert.equal(call.init.headers["x-api-key"], "sk-secret-key");
   assert.equal(call.init.headers["anthropic-version"], "2023-06-01");
+  assert.equal(Number(call.init.headers["content-length"]), Buffer.byteLength(call.bodyText));
   assert.equal(call.body.max_tokens, 8192);
   const content = call.body.messages[0].content;
   assert.equal(content[0].type, "image");
   assert.equal(content[0].source.media_type, "image/png");
+  assert.deepEqual(Buffer.from(content[0].source.data, "base64"), PNG);
   assert.equal(content[1].type, "text");
   assert.equal(answers[1].answer, "red");
 });
@@ -376,4 +394,19 @@ test("rolling window limiter blocks within the minute and recovers after", () =>
 test("maxRequestsPerMinute 0 disables the window limit", () => {
   const limiter = createLimiter({ maxConcurrentRequests: 100, maxRequestsPerMinute: 0 }, () => 0);
   for (let i = 0; i < 50; i++) limiter.acquire()();
+});
+
+test("shared limiter enforces concurrency and RPM across service instances", () => {
+  const dir = mkdtempSync(join(tmpdir(), "at-vision-shared-limit-"));
+  const stateFile = join(dir, "limit.json");
+  const config = { maxConcurrentRequests: 1, maxRequestsPerMinute: 2, timeoutMs: 1000 };
+  const first = createLimiter(config, () => 1000, { stateFile });
+  const second = createLimiter(config, () => 1000, { stateFile });
+
+  const releaseFirst = first.acquire();
+  assert.throws(() => second.acquire(), (err) => err.code === "rate_limit_error" && /Concurrent/.test(err.message));
+  releaseFirst();
+
+  second.acquire()();
+  assert.throws(() => first.acquire(), (err) => err.code === "rate_limit_error" && /Rate limit/.test(err.message));
 });

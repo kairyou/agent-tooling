@@ -101,7 +101,7 @@ npx -y @kairyou/agent-tools@latest vision -a claude --dry-run
 npx -y @kairyou/agent-tools@latest vision -a claude --uninstall
 ```
 
-安装会把 MCP runtime(含依赖)复制到 `~/.agent-tools/vision-runtime`, 为每个 agent 注册(Claude Code: `~/.claude.json`; Codex: `~/.codex/config.toml` 中带标记的独立块; OpenCode: `opencode.json`), 并把 `at-vision` skill 装入对应 agent 的全局 skills 目录(Claude Code: `~/.claude/skills`; Codex: `~/.agents/skills`; OpenCode: 配置目录下的 `skills`). 安装后无需再次从 npm 下载, 但仍需能访问配置的视觉模型网关; 更新 = 重新执行安装命令.
+安装会把预构建的自包含 MCP runtime 原子写入 `~/.agent-tools/vision-runtime`, 为每个 agent 注册(Claude Code: `~/.claude.json`; Codex: `~/.codex/config.toml` 中带标记的独立块; OpenCode: `opencode.json`), 并把 `at-vision` skill 装入对应 agent 的全局 skills 目录(Claude Code: `~/.claude/skills`; Codex: `~/.agents/skills`; OpenCode: 配置目录下的 `skills`). 安装过程不再二次下载依赖; 更新 = 重新执行安装命令. 卸载最后一个引用该 runtime 的 agent 时会一并清理 runtime, 但保留 vision provider 配置.
 
 #### 配置
 
@@ -121,6 +121,8 @@ npx -y @kairyou/agent-tools@latest vision -a claude --uninstall
 ```
 
 `apiKey` 可直接填密钥, 或用 `{ "env": "VARIABLE_NAME" }` 引用已有环境变量; 网关不需要密钥时可省略.
+Provider 请求由 runtime 直接发送, API key 不进入 shell 命令; 对外错误会将 key 脱敏为 `***`. `maxConcurrentRequests` 和 `maxRequestsPerMinute` 在本机的 MCP/CLI 进程之间共享.
+图片字节会无损地流式编码到 Provider 的 base64 JSON 请求中, 不做重压缩; URL 图片使用私有临时文件, 每次请求结束后自动删除.
 
 #### 使用
 

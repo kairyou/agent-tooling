@@ -103,7 +103,7 @@ npx -y @kairyou/agent-tools@latest vision -a claude --dry-run
 npx -y @kairyou/agent-tools@latest vision -a claude --uninstall
 ```
 
-Install copies the MCP runtime (with its dependencies) into `~/.agent-tools/vision-runtime`, registers it per agent (Claude Code: `~/.claude.json`; Codex: a marker-delimited block in `~/.codex/config.toml`; OpenCode: `opencode.json`), and installs the `at-vision` skill into the agent's global skills directory (Claude Code: `~/.claude/skills`; Codex: `~/.agents/skills`; OpenCode: its config directory's `skills`). No further npm download is needed after install; the configured vision gateway must still be reachable. Re-run the install command to update.
+Install atomically writes a prebuilt, self-contained MCP runtime to `~/.agent-tools/vision-runtime`, registers it per agent (Claude Code: `~/.claude.json`; Codex: a marker-delimited block in `~/.codex/config.toml`; OpenCode: `opencode.json`), and installs the `at-vision` skill into the agent's global skills directory (Claude Code: `~/.claude/skills`; Codex: `~/.agents/skills`; OpenCode: its config directory's `skills`). Installation does not download a second dependency tree; re-run the command to update. Uninstalling the last agent that references the shared runtime removes it while preserving the vision provider config.
 
 #### Configure
 
@@ -123,6 +123,8 @@ Install copies the MCP runtime (with its dependencies) into `~/.agent-tools/visi
 ```
 
 `apiKey` takes the key itself, or `{ "env": "VARIABLE_NAME" }` to reuse an existing environment variable; omit it if your gateway needs no key.
+The runtime sends provider requests directly, so the API key never enters a shell command; user-facing errors redact it as `***`. `maxConcurrentRequests` and `maxRequestsPerMinute` are shared across local MCP and CLI processes.
+Image bytes are streamed into the provider's base64 JSON request without recompression; URL inputs use a private temporary file that is removed after each request.
 
 #### Use
 

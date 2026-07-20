@@ -82,7 +82,8 @@ const VISION_SKILL_NAME = "at-vision";
 // not skills/: it is unusable without the MCP server, so it must not surface
 // as an independently installable skill.
 const VISION_SKILL_SRC = path.join(REPO_ROOT, "plugins", "vision", "skills", VISION_SKILL_NAME);
-const VISION_MCP_SERVER = path.join(REPO_ROOT, "plugins", "vision", "mcp-server.mjs");
+const VISION_BUNDLED_MCP_SERVER = path.join(REPO_ROOT, "dist", "vision", "mcp-server.mjs");
+const VISION_BUNDLED_CLI = path.join(REPO_ROOT, "dist", "vision", "cli.mjs");
 
 function fwd(p) {
   return p.replace(/\\/g, "/");
@@ -434,70 +435,120 @@ function applyProviderUsage(cfg, { remove }) {
 // ---- Vision capability helpers. ----
 
 const VISION_RUNTIME_DIR = path.join(INSTALL_ROOT, "vision-runtime");
-const VISION_RUNTIME_SERVER = path.join(VISION_RUNTIME_DIR, "plugins", "vision", "mcp-server.mjs");
-const VISION_RUNTIME_CLI = path.join(VISION_RUNTIME_DIR, "lib", "vision", "cli.mjs");
+const VISION_RATE_LIMIT_STATE = path.join(INSTALL_ROOT, "cache", "vision-rate-limit.json");
+const VISION_DIST_DIR = path.join(REPO_ROOT, "dist", "vision");
+const VISION_RUNTIME_SERVER = path.join(VISION_RUNTIME_DIR, "mcp-server.mjs");
+const VISION_RUNTIME_CLI = path.join(VISION_RUNTIME_DIR, "cli.mjs");
+const VISION_LEGACY_RUNTIME_SERVER = path.join(
+  VISION_RUNTIME_DIR,
+  "plugins",
+  "vision",
+  "mcp-server.mjs"
+);
 const VISION_SKILL_MARKER = ".agent-tools-managed.json";
 const VISION_SKILL_MARKER_DATA = Object.freeze({
   owner: "@kairyou/agent-tools",
   capability: "vision",
   artifact: "skill",
 });
-// The MCP server needs its npm dependencies at spawn time, so install copies
-// the runtime into ~/.agent-tools/vision-runtime and installs deps there once;
-// hosts then launch plain `node <path>` — offline, fast, version fixed at
-// install time (update = re-run the install command).
+// Vision is bundled at release time. Install atomically swaps two self-contained
+// entry files into ~/.agent-tools/vision-runtime, so hosts never run npm and a
+// failed update cannot destroy the previously working runtime.
 function visionMcpCommand() {
   return { command: "node", args: [fwd(VISION_RUNTIME_SERVER)] };
+}
+
+function sameFilePath(left, right) {
+  function canonical(value) {
+    const resolved = path.resolve(String(value));
+    try {
+      return fs.realpathSync.native(resolved);
+    } catch {
+      return resolved;
+    }
+  }
+  const a = canonical(left);
+  const b = canonical(right);
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+function isClaudeVisionMcp(value, mcp = visionMcpCommand()) {
+  return Boolean(
+    value &&
+      value.command === mcp.command &&
+      Array.isArray(value.args) &&
+      value.args.length === 1 &&
+      (sameFilePath(value.args[0], mcp.args[0]) ||
+        sameFilePath(value.args[0], VISION_LEGACY_RUNTIME_SERVER))
+  );
+}
+
+function isOpenCodeVisionMcp(value, mcp = visionMcpCommand()) {
+  return Boolean(
+    value &&
+      value.type === "local" &&
+      Array.isArray(value.command) &&
+      value.command.length === 2 &&
+      value.command[0] === mcp.command &&
+      (sameFilePath(value.command[1], mcp.args[0]) ||
+        sameFilePath(value.command[1], VISION_LEGACY_RUNTIME_SERVER))
+  );
 }
 
 function installVisionRuntime(opts) {
   if (opts.uninstall) return;
   console.log(`vision runtime: ${VISION_RUNTIME_DIR}`);
-  const repoPkg = readJson(path.join(REPO_ROOT, "package.json"));
-  const deps = {};
-  for (const name of ["@modelcontextprotocol/sdk", "zod", "jsonc-parser"]) {
-    if (repoPkg.dependencies?.[name]) deps[name] = repoPkg.dependencies[name];
-  }
-  const runtimePkg = {
-    name: "agent-tools-vision-runtime",
-    private: true,
-    description: "Installed by @kairyou/agent-tools (vision capability); do not edit.",
-    dependencies: deps,
-  };
   if (opts.dryRun) {
-    console.log(`  [dry-run] would copy lib/vision + plugins/vision -> ${VISION_RUNTIME_DIR}`);
-    console.log(`  [dry-run] would npm-install ${Object.keys(deps).join(", ")}`);
+    console.log(`  [dry-run] would atomically install ${VISION_DIST_DIR} -> ${VISION_RUNTIME_DIR}`);
     return;
   }
-  fs.mkdirSync(VISION_RUNTIME_DIR, { recursive: true });
-  // These directories are wholly installer-owned. Replace them rather than
-  // overlaying so files removed by an update do not survive indefinitely.
-  fs.rmSync(path.join(VISION_RUNTIME_DIR, "lib", "vision"), { recursive: true, force: true });
-  fs.rmSync(path.join(VISION_RUNTIME_DIR, "plugins", "vision"), { recursive: true, force: true });
-  fs.cpSync(path.join(REPO_ROOT, "lib", "vision"), path.join(VISION_RUNTIME_DIR, "lib", "vision"), {
-    recursive: true,
-  });
-  fs.cpSync(path.join(REPO_ROOT, "plugins", "vision"), path.join(VISION_RUNTIME_DIR, "plugins", "vision"), {
-    recursive: true,
-  });
-  writeText(
-    path.join(VISION_RUNTIME_DIR, "package.json"),
-    JSON.stringify(runtimePkg, null, 2) + "\n",
-    false
-  );
-  if (process.env.AGENT_TOOLS_VISION_SKIP_DEPS === "1") return; // tests
-  // Fixed argument string (no user input); shell:true is required to run
-  // npm.cmd on Windows.
-  const npm = spawnSync("npm install --omit=dev --no-audit --no-fund --loglevel=error", {
-    cwd: VISION_RUNTIME_DIR,
-    stdio: "inherit",
-    shell: true,
-  });
-  if (npm.status !== 0) {
-    console.error("  npm install for the vision runtime failed; see output above.");
-    process.exit(1);
+  for (const name of ["mcp-server.mjs", "cli.mjs"]) {
+    if (!fs.existsSync(path.join(VISION_DIST_DIR, name))) {
+      throw new Error(`Missing bundled vision runtime ${path.join(VISION_DIST_DIR, name)}. Run npm run build:vision.`);
+    }
   }
-  console.log("  installed vision runtime dependencies");
+
+  fs.mkdirSync(path.dirname(VISION_RUNTIME_DIR), { recursive: true });
+  const suffix = `${process.pid}-${Date.now()}`;
+  const stage = `${VISION_RUNTIME_DIR}.stage-${suffix}`;
+  const backup = `${VISION_RUNTIME_DIR}.backup-${suffix}`;
+  let movedCurrent = false;
+  try {
+    fs.cpSync(VISION_DIST_DIR, stage, { recursive: true });
+    writeText(
+      path.join(stage, "runtime.json"),
+      JSON.stringify({ owner: "@kairyou/agent-tools", capability: "vision", version: 1 }, null, 2) + "\n",
+      false
+    );
+    for (const name of ["mcp-server.mjs", "cli.mjs"]) {
+      const check = spawnSync(process.execPath, ["--check", path.join(stage, name)], {
+        encoding: "utf8",
+      });
+      if (check.status !== 0) {
+        throw new Error(`Bundled vision runtime failed syntax validation (${name}): ${check.stderr || check.stdout}`);
+      }
+    }
+
+    if (fs.existsSync(VISION_RUNTIME_DIR)) {
+      fs.renameSync(VISION_RUNTIME_DIR, backup);
+      movedCurrent = true;
+    }
+    if (process.env.AGENT_TOOLS_VISION_TEST_FAIL_SWAP === "1") {
+      throw new Error("Simulated vision runtime swap failure");
+    }
+    fs.renameSync(stage, VISION_RUNTIME_DIR);
+    fs.rmSync(backup, { recursive: true, force: true });
+    console.log("  installed bundled vision runtime");
+  } catch (error) {
+    fs.rmSync(stage, { recursive: true, force: true });
+    if (movedCurrent && !fs.existsSync(VISION_RUNTIME_DIR) && fs.existsSync(backup)) {
+      fs.renameSync(backup, VISION_RUNTIME_DIR);
+    }
+    throw error;
+  } finally {
+    fs.rmSync(stage, { recursive: true, force: true });
+    if (fs.existsSync(VISION_RUNTIME_DIR)) fs.rmSync(backup, { recursive: true, force: true });
+  }
 }
 
 function isManagedVisionSkillDir(dest) {
@@ -628,11 +679,15 @@ function runClaudeVision(opts) {
   const skillsDir = opts.claudeSkillsDir || path.join(os.homedir(), ".claude", "skills");
   console.log(`claude vision: ${claudeJson}`);
   const cfg = readJson(claudeJson);
+  const mcp = visionMcpCommand();
+  const existing = cfg.mcpServers?.[VISION_MCP_NAME];
   if (opts.uninstall) {
-    if (cfg.mcpServers && cfg.mcpServers[VISION_MCP_NAME]) {
+    if (isClaudeVisionMcp(existing, mcp)) {
       delete cfg.mcpServers[VISION_MCP_NAME];
       if (Object.keys(cfg.mcpServers).length === 0) delete cfg.mcpServers;
       writeJson(claudeJson, cfg, opts.dryRun);
+    } else if (existing) {
+      console.log(`  kept unmanaged ${VISION_MCP_NAME} entry in ${claudeJson}`);
     } else {
       console.log(`  no ${VISION_MCP_NAME} MCP entry found; nothing to remove.`);
     }
@@ -640,7 +695,12 @@ function runClaudeVision(opts) {
     console.log("  - vision");
     return;
   }
-  const mcp = visionMcpCommand();
+  if (existing && !isClaudeVisionMcp(existing, mcp)) {
+    throw new Error(
+      `Found an existing unmanaged ${VISION_MCP_NAME} entry in ${claudeJson}. ` +
+        "Remove or rename it, then re-run the install."
+    );
+  }
   cfg.mcpServers = cfg.mcpServers || {};
   cfg.mcpServers[VISION_MCP_NAME] = { type: "stdio", command: mcp.command, args: mcp.args };
   writeJson(claudeJson, cfg, opts.dryRun);
@@ -759,6 +819,16 @@ function updateOpencodeVisionMcp(file, { remove, dryRun, mcp }) {
     throw new Error(`Cannot parse ${file} as JSONC`);
   }
   const existing = current.mcp && current.mcp[VISION_MCP_NAME];
+  if (existing && !isOpenCodeVisionMcp(existing, mcp)) {
+    if (remove) {
+      console.log(`  kept unmanaged ${VISION_MCP_NAME} entry in ${file}`);
+      return;
+    }
+    throw new Error(
+      `Found an existing unmanaged ${VISION_MCP_NAME} entry in ${file}. ` +
+        "Remove or rename it, then re-run the install."
+    );
+  }
   const desired = remove
     ? undefined
     : { type: "local", command: [mcp.command, ...mcp.args], enabled: true };
@@ -817,6 +887,73 @@ function runOpencode(opts) {
   if (!opts.dryRun) console.log("  NOTE: restart opencode to load the agent-tools usage plugin.");
 }
 
+function visionRuntimeHasRemainingReference(opts) {
+  const removed = new Set(opts.agents);
+  if (!removed.has("claude")) {
+    const file = opts.claudeJson || path.join(os.homedir(), ".claude.json");
+    try {
+      if (isClaudeVisionMcp(readJson(file).mcpServers?.[VISION_MCP_NAME])) return true;
+    } catch {
+      return true;
+    }
+  }
+  if (!removed.has("codex")) {
+    const file = opts.codexConfig || path.join(os.homedir(), ".codex", "config.toml");
+    try {
+      const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+      const start = text.indexOf(CODEX_VISION_BEGIN);
+      const end = text.indexOf(CODEX_VISION_END, start + CODEX_VISION_BEGIN.length);
+      if (start !== -1 && end !== -1) {
+        const block = text.slice(start, end);
+        if (
+          block.includes(fwd(VISION_RUNTIME_SERVER)) ||
+          block.includes(fwd(VISION_LEGACY_RUNTIME_SERVER))
+        ) {
+          return true;
+        }
+      }
+    } catch {
+      return true;
+    }
+  }
+  if (!removed.has("opencode")) {
+    const file = path.join(opencodeConfigDir(opts), "opencode.json");
+    try {
+      if (fs.existsSync(file)) {
+        const errors = [];
+        const config = parseJsonc(fs.readFileSync(file, "utf8"), errors, { allowTrailingComma: true });
+        if (errors.length > 0) return true;
+        if (isOpenCodeVisionMcp(config?.mcp?.[VISION_MCP_NAME])) return true;
+      }
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+function cleanupVisionRuntimeIfUnused(opts) {
+  if (!opts.uninstall || !wants(opts, "vision") || !fs.existsSync(VISION_RUNTIME_DIR)) return;
+  if (visionRuntimeHasRemainingReference(opts)) {
+    console.log(`  kept shared vision runtime ${VISION_RUNTIME_DIR} (another agent still references it)`);
+    return;
+  }
+  if (opts.dryRun) {
+    console.log(`  [dry-run] would remove unused vision runtime ${VISION_RUNTIME_DIR}`);
+    return;
+  }
+  fs.rmSync(VISION_RUNTIME_DIR, { recursive: true, force: true });
+  if (!fs.existsSync(`${VISION_RATE_LIMIT_STATE}.lock`)) {
+    fs.rmSync(VISION_RATE_LIMIT_STATE, { force: true });
+    try {
+      fs.rmdirSync(path.dirname(VISION_RATE_LIMIT_STATE));
+    } catch {
+      // The shared cache directory may contain state for other capabilities.
+    }
+  }
+  console.log(`  removed unused vision runtime ${VISION_RUNTIME_DIR}`);
+}
+
 const AGENTS = { claude: runClaude, codex: runCodex, opencode: runOpencode };
 
 function main() {
@@ -844,6 +981,7 @@ function main() {
     }
     run(opts);
   }
+  cleanupVisionRuntimeIfUnused(opts);
 }
 
 // Standalone vision commands dispatch before capability parsing so image
@@ -851,11 +989,11 @@ function main() {
 const subcommand = process.argv[2];
 if (subcommand === "inspect-image") {
   const { runInspectImageCli } = await import(
-    pathToFileURL(path.join(REPO_ROOT, "lib", "vision", "cli.mjs")).href
+    pathToFileURL(VISION_BUNDLED_CLI).href
   );
   process.exitCode = await runInspectImageCli(process.argv.slice(3));
 } else if (subcommand === "mcp-vision") {
-  await import(pathToFileURL(VISION_MCP_SERVER).href);
+  await import(pathToFileURL(VISION_BUNDLED_MCP_SERVER).href);
 } else {
   main();
 }

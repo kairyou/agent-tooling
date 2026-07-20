@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +37,11 @@ test("file source loads a real image and reports its media type", async () => {
   const file = writeTmp("ok.png", PNG);
   const result = await loadImageSource({ type: "file", value: file }, LIMITS);
   assert.equal(result.mediaType, "image/png");
-  assert.equal(result.bytes.length, PNG.length);
+  assert.equal(result.byteLength, PNG.length);
+  const chunks = [];
+  for await (const chunk of result.createReadStream()) chunks.push(chunk);
+  assert.deepEqual(Buffer.concat(chunks), PNG);
+  result.dispose();
 });
 
 test("file source rejects missing files, directories, and non-images", async () => {
@@ -116,11 +120,17 @@ after(() => server.close());
 test("url source downloads and validates an image", async () => {
   const result = await loadImageSource({ type: "url", value: `${base}/ok.png` }, LIMITS);
   assert.equal(result.mediaType, "image/png");
+  assert.equal(result.byteLength, PNG.length);
+  assert.ok(existsSync(result.tempFile));
+  const tempFile = result.tempFile;
+  result.dispose();
+  assert.ok(!existsSync(tempFile));
 });
 
 test("url source follows redirects up to the cap", async () => {
   const result = await loadImageSource({ type: "url", value: `${base}/hop1` }, LIMITS);
   assert.equal(result.mediaType, "image/png");
+  result.dispose();
   await assert.rejects(
     loadImageSource({ type: "url", value: `${base}/loop` }, LIMITS),
     (err) => err.code === "fetch_error" && /redirects/.test(err.message)
