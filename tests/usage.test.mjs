@@ -223,6 +223,40 @@ test("custom routes from config.jsonc probe first and are preset-selectable", as
   assert.equal(byPreset.systemMessage, "API | custom $1 MOCK");
 });
 
+test("packaged routes under dist/usage/routes load automatically", async () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tools-packaged-route-"));
+  const codexHome = join(temp, "codex");
+  const agentHome = join(temp, "agent");
+  const packagedDir = join(agentHome, "dist", "usage", "routes");
+  mkdirSync(packagedDir, { recursive: true });
+  writeFileSync(
+    join(packagedDir, "corp.mjs"),
+    "export async function run(context) {\n" +
+      "  return { text: `API | packaged ${context.label}` };\n" +
+      "}\n"
+  );
+
+  // No config needed: the packaged route probes before the built-ins.
+  const auto = await runProvider({ baseUrl: "http://127.0.0.1:9/v1", codexHome, agentHome });
+  assert.equal(auto.systemMessage, "API | packaged MOCK");
+
+  // A config-declared route with the same id overrides the packaged one.
+  mkdirSync(join(agentHome, "custom"), { recursive: true });
+  writeFileSync(
+    join(agentHome, "custom", "corp.mjs"),
+    "export async function run() {\n" +
+      '  return { text: "API | declared" };\n' +
+      "}\n"
+  );
+  const declared = await runProvider({
+    baseUrl: "http://127.0.0.1:9/v1",
+    config: { routes: ["custom/corp.mjs"] },
+    codexHome,
+    agentHome,
+  });
+  assert.equal(declared.systemMessage, "API | declared");
+});
+
 test("a broken custom route is skipped and built-ins still answer", async () => {
   await withServer((req, res) => {
     if (req.url === "/api/v1/auth/me") {

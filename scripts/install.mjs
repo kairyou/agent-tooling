@@ -242,6 +242,26 @@ function installRuntimeAssets(opts) {
   }
   console.log(`runtime: ${INSTALL_ROOT}`);
   for (const [src, dest, options] of files) copyRuntimeFile(src, dest, opts.dryRun, options);
+  if (wants(opts, "usage")) syncUsageRoutesDir(opts.dryRun);
+}
+
+// Repo-shipped usage routes are replaced wholesale so routes removed from the
+// repo do not linger (a stale file would still be loaded).
+const SOURCE_USAGE_ROUTES_DIR = path.join(REPO_ROOT, "dist", "usage", "routes");
+const RUNTIME_USAGE_ROUTES_DIR = path.join(INSTALL_ROOT, "dist", "usage", "routes");
+
+function syncUsageRoutesDir(dryRun) {
+  const hasSource = fs.existsSync(SOURCE_USAGE_ROUTES_DIR);
+  if (dryRun) {
+    if (hasSource) {
+      console.log(`  [dry-run] would copy ${SOURCE_USAGE_ROUTES_DIR} -> ${RUNTIME_USAGE_ROUTES_DIR}`);
+    } else if (fs.existsSync(RUNTIME_USAGE_ROUTES_DIR)) {
+      console.log(`  [dry-run] would remove ${RUNTIME_USAGE_ROUTES_DIR}`);
+    }
+    return;
+  }
+  fs.rmSync(RUNTIME_USAGE_ROUTES_DIR, { recursive: true, force: true });
+  if (hasSource) fs.cpSync(SOURCE_USAGE_ROUTES_DIR, RUNTIME_USAGE_ROUTES_DIR, { recursive: true });
 }
 
 function parseArgs(argv) {

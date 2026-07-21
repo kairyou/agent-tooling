@@ -1,5 +1,6 @@
 // Known gateway usage endpoints and the probing order for a given context.
 
+import { readdir } from "node:fs/promises";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { requestJson } from "./http.mjs";
@@ -236,40 +237,64 @@ function customRoutes() {
   return customRoutesPromise;
 }
 
+async function loadRouteModule(file, spec) {
+  try {
+    const mod = await import(pathToFileURL(file).href);
+    if (typeof mod.run !== "function") {
+      throw new Error("missing `export async function run(context, helpers)`");
+    }
+    const id = String(mod.meta?.id || basename(file, extname(file)));
+    return {
+      id,
+      path: spec,
+      run: async (context) => {
+        const result = await mod.run(context, CUSTOM_ROUTE_HELPERS);
+        if (typeof result?.text !== "string" || !result.text) {
+          throw new Error(`custom route ${id} returned no text`);
+        }
+        return {
+          updatedAt: new Date().toISOString(),
+          baseUrl: context.baseUrl,
+          provider: context.providerName,
+          source: id,
+          ...result,
+        };
+      },
+    };
+  } catch (error) {
+    await debugLog({ source: "custom-route", file, error: error.message });
+    return null;
+  }
+}
+
 async function loadCustomRoutes() {
+  const routes = [];
+
+  // config-declared routes probe first, in config order.
   const config = await agentConfig();
   const specs = Array.isArray(config.routes) ? config.routes : [];
-  const routes = [];
   for (const spec of specs) {
     if (typeof spec !== "string" || !spec.trim()) continue;
     const file = isAbsolute(spec) ? spec : join(AGENT_TOOLS_HOME, spec);
-    try {
-      const mod = await import(pathToFileURL(file).href);
-      if (typeof mod.run !== "function") {
-        throw new Error("missing `export async function run(context, helpers)`");
-      }
-      const id = String(mod.meta?.id || basename(file, extname(file)));
-      routes.push({
-        id,
-        path: spec,
-        run: async (context) => {
-          const result = await mod.run(context, CUSTOM_ROUTE_HELPERS);
-          if (typeof result?.text !== "string" || !result.text) {
-            throw new Error(`custom route ${id} returned no text`);
-          }
-          return {
-            updatedAt: new Date().toISOString(),
-            baseUrl: context.baseUrl,
-            provider: context.providerName,
-            source: id,
-            ...result,
-          };
-        },
-      });
-    } catch (error) {
-      await debugLog({ source: "custom-route", file, error: error.message });
-    }
+    const route = await loadRouteModule(file, spec);
+    if (route) routes.push(route);
   }
+
+  // Repo-shipped routes: the installer replaces this directory from the
+  // package's dist/usage/routes on every install, so a fork can distribute
+  // gateways to everyone under git control. Config-declared ids win.
+  const packagedDir = join(AGENT_TOOLS_HOME, "dist", "usage", "routes");
+  let packaged = [];
+  try {
+    packaged = (await readdir(packagedDir)).filter((n) => n.endsWith(".mjs")).sort();
+  } catch {
+    packaged = [];
+  }
+  for (const name of packaged) {
+    const route = await loadRouteModule(join(packagedDir, name), `dist/usage/routes/${name}`);
+    if (route && !routes.some((existing) => existing.id === route.id)) routes.push(route);
+  }
+
   return routes;
 }
 

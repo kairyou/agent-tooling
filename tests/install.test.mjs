@@ -41,6 +41,11 @@ test("installer wires and unwires Codex usage without removing unrelated hooks",
   };
   writeFileSync(hooksFile, JSON.stringify({ hooks: { PreToolUse: [existingHook] } }));
 
+  // A stale packaged route (removed from the repo) must not survive install.
+  const staleRoute = join(runtime, "dist", "usage", "routes", "stale.mjs");
+  mkdirSync(join(runtime, "dist", "usage", "routes"), { recursive: true });
+  writeFileSync(staleRoute, "export async function run() {}\n");
+
   const args = [
     "usage",
     "-a",
@@ -51,6 +56,7 @@ test("installer wires and unwires Codex usage without removing unrelated hooks",
     skillsDir,
   ];
   runInstall(args, env);
+  assert.equal(existsSync(staleRoute), false);
   const installed = JSON.parse(readFileSync(hooksFile, "utf8"));
 
   assert.equal(installed.hooks.PreToolUse.length, 1);

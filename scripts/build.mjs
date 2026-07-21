@@ -37,6 +37,15 @@ const TARGETS = {
   },
 };
 
+// Repo-shipped usage routes (a fork can commit integrations/usage/routes/*.mjs
+// to distribute custom gateways to everyone who installs). Absent upstream.
+const USAGE_ROUTES_DIR = path.join(ROOT, "integrations", "usage", "routes");
+if (fs.existsSync(USAGE_ROUTES_DIR)) {
+  for (const file of fs.readdirSync(USAGE_ROUTES_DIR).filter((n) => n.endsWith(".mjs"))) {
+    TARGETS.usage.entryPoints[`routes/${file.slice(0, -4)}`] = path.join(USAGE_ROUTES_DIR, file);
+  }
+}
+
 for (const [name, { entryPoints, external = [] }] of Object.entries(TARGETS)) {
   const outDir = path.join(DIST, name);
   const stage = path.join(DIST, `.${name}-build-${process.pid}-${Date.now()}`);
