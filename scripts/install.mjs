@@ -56,23 +56,25 @@ const INSTALL_ROOT =
   process.env.AGENT_TOOLS_HOME || path.join(os.homedir(), ".agent-tools");
 const META_KEY = "_agentTools";
 const META_VERSION = 1;
+// Everything copied into ~/.agent-tools is built output from dist/ (see
+// scripts/build.mjs); integrations/ holds the sources.
 const SOURCE = {
-  codexUsageHook: path.join(REPO_ROOT, "integrations", "usage", "codex-hook.mjs"),
-  usageScript: path.join(REPO_ROOT, "integrations", "usage", "core.mjs"),
-  usageCli: path.join(REPO_ROOT, "integrations", "usage", "cli.mjs"),
+  codexUsageHook: path.join(REPO_ROOT, "dist", "usage", "codex-hook.mjs"),
+  usageScript: path.join(REPO_ROOT, "dist", "usage", "core.mjs"),
+  usageCli: path.join(REPO_ROOT, "dist", "usage", "cli.mjs"),
   config: path.join(REPO_ROOT, "config.default.jsonc"),
-  claudeStatusline: path.join(REPO_ROOT, "integrations", "statusline", "claude-statusline.mjs"),
-  opencodeUsagePlugin: path.join(REPO_ROOT, "integrations", "usage", "opencode-plugin.mjs"),
-  opencodeUsageTui: path.join(REPO_ROOT, "integrations", "usage", "opencode-tui.mjs"),
+  claudeStatusline: path.join(REPO_ROOT, "dist", "statusline", "claude-statusline.mjs"),
+  opencodeUsagePlugin: path.join(REPO_ROOT, "dist", "usage", "opencode-plugin.mjs"),
+  opencodeUsageTui: path.join(REPO_ROOT, "dist", "usage", "opencode-tui.mjs"),
 };
 const RUNTIME = {
-  codexUsageHook: path.join(INSTALL_ROOT, "integrations", "usage", "codex-hook.mjs"),
-  usageScript: path.join(INSTALL_ROOT, "integrations", "usage", "core.mjs"),
-  usageCli: path.join(INSTALL_ROOT, "integrations", "usage", "cli.mjs"),
+  codexUsageHook: path.join(INSTALL_ROOT, "dist", "usage", "codex-hook.mjs"),
+  usageScript: path.join(INSTALL_ROOT, "dist", "usage", "core.mjs"),
+  usageCli: path.join(INSTALL_ROOT, "dist", "usage", "cli.mjs"),
   config: path.join(INSTALL_ROOT, "config.jsonc"),
-  claudeStatusline: path.join(INSTALL_ROOT, "integrations", "statusline", "claude-statusline.mjs"),
-  opencodeUsagePlugin: path.join(INSTALL_ROOT, "integrations", "usage", "opencode-plugin.mjs"),
-  opencodeUsageTui: path.join(INSTALL_ROOT, "integrations", "usage", "opencode-tui.mjs"),
+  claudeStatusline: path.join(INSTALL_ROOT, "dist", "statusline", "claude-statusline.mjs"),
+  opencodeUsagePlugin: path.join(INSTALL_ROOT, "dist", "usage", "opencode-plugin.mjs"),
+  opencodeUsageTui: path.join(INSTALL_ROOT, "dist", "usage", "opencode-tui.mjs"),
 };
 const ALL_CAPS = ["statusline", "usage", "vision"];
 const ALL_AGENTS = ["claude", "codex", "opencode"];
@@ -184,7 +186,7 @@ function isOpenCodeUsageTuiEntry(entry) {
   const spec = Array.isArray(entry) ? entry[0] : entry;
   return (
     typeof spec === "string" &&
-    /\/integrations\/usage\/opencode-tui\.mjs$/i.test(spec.replace(/\\/g, "/"))
+    /\/dist\/usage\/opencode-tui\.mjs$/i.test(spec.replace(/\\/g, "/"))
   );
 }
 
@@ -269,6 +271,11 @@ function installRuntimeAssets(opts) {
     addFile(SOURCE.config, RUNTIME.config, { mergeJsonc: true });
   }
   if (files.length === 0) return;
+  for (const [src] of files) {
+    if (!fs.existsSync(src)) {
+      throw new Error(`Missing built artifact ${src}. Run npm run build.`);
+    }
+  }
   console.log(`runtime: ${INSTALL_ROOT}`);
   for (const [src, dest, options] of files) copyRuntimeFile(src, dest, opts.dryRun, options);
 }
@@ -518,7 +525,7 @@ function installVisionRuntime(opts) {
   }
   for (const name of ["mcp-server.mjs", "cli.mjs"]) {
     if (!fs.existsSync(path.join(VISION_DIST_DIR, name))) {
-      throw new Error(`Missing bundled vision runtime ${path.join(VISION_DIST_DIR, name)}. Run npm run build:vision.`);
+      throw new Error(`Missing bundled vision runtime ${path.join(VISION_DIST_DIR, name)}. Run npm run build.`);
     }
   }
 

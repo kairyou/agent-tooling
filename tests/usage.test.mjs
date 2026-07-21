@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PROVIDER_SCRIPT = join(ROOT, "integrations", "usage", "core.mjs");
 const USAGE_CLI = join(ROOT, "integrations", "usage", "cli.mjs");
+const DIST_USAGE_CLI = join(ROOT, "dist", "usage", "cli.mjs");
 const CODEX_USAGE_HOOK = join(ROOT, "integrations", "usage", "codex-hook.mjs");
 
 async function withServer(handler, fn) {
@@ -71,9 +72,9 @@ async function runProvider({ baseUrl, preset = "auto", config = {}, codexHome, a
   return JSON.parse(result.stdout);
 }
 
-async function runUsageCli(agent, env) {
+async function runUsageCli(agent, env, entry = USAGE_CLI) {
   return await new Promise((resolve) => {
-    const child = spawn(process.execPath, agent ? [USAGE_CLI, "--agent", agent] : [USAGE_CLI], {
+    const child = spawn(process.execPath, agent ? [entry, "--agent", agent] : [entry], {
       cwd: ROOT,
       env: { ...process.env, ...env },
       stdio: ["ignore", "pipe", "pipe"],
@@ -121,13 +122,18 @@ test("local usage CLI queries Codex and Claude without a package manager", async
     });
     assert.deepEqual(codex, { status: 0, stdout: "API | balance $18.8\n", stderr: "" });
 
-    const claude = await runUsageCli("claude", {
+    const claudeEnv = {
       ...common,
       ANTHROPIC_BASE_URL: `${baseUrl}/v1`,
       ANTHROPIC_AUTH_TOKEN: "test-key",
       ANTHROPIC_API_KEY: "",
-    });
+    };
+    const claude = await runUsageCli("claude", claudeEnv);
     assert.deepEqual(claude, { status: 0, stdout: "API | balance $18.8\n", stderr: "" });
+
+    // The bundled dist entry must behave exactly like the source entry.
+    const bundled = await runUsageCli("claude", claudeEnv, DIST_USAGE_CLI);
+    assert.deepEqual(bundled, claude);
   });
 });
 
