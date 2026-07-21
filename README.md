@@ -1,28 +1,10 @@
 # Agent Tools
 
-Reusable Agent Skills, plus runtime integrations for Codex, Claude Code, and opencode.
+Reusable Agent Skills and installable integrations — statusline, provider usage, and vision — for Codex, Claude Code, and opencode.
+
+Requires Node.js >= 22.
 
 [中文](README.zh-CN.md)
-
-## Repository Structure
-
-```text
-agent-tools/
-├── .claude-plugin/    # Claude Code/plugin ecosystem manifest.
-├── .codex-plugin/     # Codex plugin manifest.
-├── integrations/      # Installable capabilities, one directory each; files named by agent + form.
-│   ├── statusline/    # Claude Code command-backed statusLine script.
-│   ├── usage/         # Provider usage (query core + codex hook, opencode plugins, CLI, at-usage skill template).
-│   └── vision/        # Cross-model image understanding (inspect_image MCP server + at-vision skill).
-├── skills/            # Reusable Agent Skills for CLI discovery and plugin manifests.
-│   ├── workflow/      # Workflow-oriented skills.
-│   │   ├── at-commit/   # Conventional Commit message skill.
-│   │   ├── at-review/   # Review changes for bugs and regressions.
-│   │   └── at-simplify/ # Reduce complexity and duplication in changes.
-│   └── integrations/  # Skills that integrate external systems.
-│       └── at-zentao/   # ZenTao bug/task fixing workflow.
-└── scripts/           # Install, sync, validation, and maintenance scripts.
-```
 
 ## Skills
 
@@ -91,8 +73,10 @@ Runtime capabilities, installed per agent:
 npx -y @kairyou/agent-tools@latest <capability> -a <agent...>
 ```
 
-`--dry-run` previews, `--uninstall` removes, and re-running the install command
-updates.
+`--dry-run` previews, `--uninstall` unwires the integration from the agent, and
+re-running the install command updates. The installer only touches config
+entries it wrote itself; shared files under `~/.agent-tools` are kept on
+uninstall.
 
 | Capability | Claude Code | Codex | OpenCode |
 | --- | --- | --- | --- |
@@ -122,7 +106,11 @@ it preserves top-of-file comments and existing values.
 
 ### Provider usage
 
-Shows the active API provider's balance / quota inside each agent.
+For API relay / gateway setups: shows the relay's balance / quota inside the
+agent, so when you pay per use or have plan limits you always know how much you
+have spent and how much is left — without opening the gateway console.
+Works with compatible Sub2API-like,
+NewAPI/OneAPI/OneHub/DoneHub/Veloera/AnyRouter-like, and OpenRouter gateways.
 
 ```bash
 npx -y @kairyou/agent-tools@latest usage -a claude
@@ -134,16 +122,35 @@ npx -y @kairyou/agent-tools@latest usage -a opencode
   `/at-usage` to show the current usage in the conversation.
 - **Codex** — adds a hook to `UserPromptSubmit` and `Stop` in `~/.codex/hooks.json`
   and the `at-usage` skill to `~/.agents/skills`. Run `/hooks` inside Codex once
-  to approve it. Hook output only appears in the Codex CLI; in clients that do
-  not show it (e.g. Paseo), invoke `$at-usage`.
+  to approve it. The Codex CLI displays hook output; some clients (e.g. Paseo)
+  currently do not — invoke `$at-usage` there.
 - **OpenCode** — adds server and TUI plugins: usage refreshes when the session
   goes idle and shows as a toast, and `/at-usage` shows the latest cached value.
   Restart opencode after installing or updating.
 
+The relay endpoint is auto-discovered — Codex: the active provider's `base_url`
+and key from `~/.codex/config.toml` / `auth.json`; Claude Code:
+`ANTHROPIC_BASE_URL` plus `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`.
+Official (non-relay) endpoints are skipped. If it reports
+`Provider usage is unavailable.`, point it at the relay explicitly —
+`PROVIDER_USAGE_BASE_URL` / `PROVIDER_USAGE_API_KEY` env vars override the
+endpoint and key — and tune `providerUsage` in `~/.agent-tools/config.jsonc`:
+
+```jsonc
+{
+  "providerUsage": {
+    "preset": "auto", // sub2api | new-api | veloera | anyrouter | openrouter | ...
+    "userId": "",     // some NewAPI/Veloera panels require your panel user id
+    "days": 30,       // spend window for the "30d" field (max 90)
+    "debug": false    // true: log probes to ~/.agent-tools/logs/usage-debug.log
+  }
+}
+```
+
 Output examples:
 
 ```text
-# Subscription / plan quota.
+# Relay plan quota.
 API | D $0.0/$100 | W $0.0/$300 | Exp 07-08
 
 # Wallet balance.
@@ -152,11 +159,6 @@ API | balance $362 | today $61.7 | 30d $566
 
 Fields: `D/W/M` are daily/weekly/monthly spend against plan limits; `Exp` is
 the plan expiry; `balance` is wallet credit; `today` and `30d` are API spend.
-
-#### Supported gateways
-
-Balance, quota, and plan usage queries support compatible Sub2API-like,
-NewAPI/OneAPI/OneHub/DoneHub/Veloera/AnyRouter-like, and OpenRouter gateways.
 
 ### Vision (cross-model image understanding)
 
@@ -185,8 +187,8 @@ skill into the agent's skills directory.
     "baseUrl": "https://gateway.example.com/v1",  // anthropic-compatible: gateway root, /v1/messages is appended
     "model": "internal-vlm",
     "apiKey": { "env": "OPENAI_API_KEY" }  // reuse an existing env var, or the key itself
-    // optional: "timeoutMs": 30000, "maxImageBytes": 20971520, "maxOutputTokens": 8192,
-    //           "maxConcurrentRequests": 2, "maxRequestsPerMinute": 30
+    // , "timeoutMs": 30000, "maxImageBytes": 20971520, "maxOutputTokens": 8192
+    // , "maxConcurrentRequests": 2, "maxRequestsPerMinute": 30
   }
 }
 ```
@@ -214,6 +216,26 @@ To run directly from the repository, replace the npm package name with
 npx -y github:kairyou/agent-tools usage -a codex
 ```
 
+## Repository Structure
+
+```text
+agent-tools/
+├── .claude-plugin/    # Claude Code/plugin ecosystem manifest.
+├── .codex-plugin/     # Codex plugin manifest.
+├── integrations/      # Installable capabilities, one directory each.
+│   ├── statusline/    # Agent status line: branch, model, usage.
+│   ├── usage/         # Provider balance / quota display.
+│   └── vision/        # Cross-model image understanding.
+├── skills/            # Reusable Agent Skills.
+│   ├── workflow/      # Workflow-oriented skills.
+│   │   ├── at-commit/   # Conventional Commit message skill.
+│   │   ├── at-review/   # Review changes for bugs and regressions.
+│   │   └── at-simplify/ # Reduce complexity and duplication in changes.
+│   └── integrations/  # Skills that integrate external systems.
+│       └── at-zentao/   # ZenTao bug/task fixing workflow.
+└── scripts/           # Install, sync, validation, and maintenance scripts.
+```
+
 ## FAQ
 
 ### Why does global installation fail for PromptScript?
@@ -227,8 +249,3 @@ other agents and can be ignored. See [`skills` issue #1352](https://github.com/v
 - [OpenCommit](https://github.com/di-sukharev/opencommit)
 - [GitLens](https://github.com/gitkraken/vscode-gitlens)
 - [claude-code-system-prompts](https://github.com/Piebald-AI/claude-code-system-prompts)
-
-## Notes
-
-- The installer marks and removes only the config entries it owns.
-- Run local checks with `npm test`.
