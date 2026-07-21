@@ -236,6 +236,35 @@ function stripJsonComments(input) {
   return out;
 }
 
+// Matches jsonc-parser's allowTrailingComma so every config.jsonc reader in
+// this package accepts the same syntax. Runs on comment-stripped input.
+function stripTrailingCommas(input) {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    if (inString) {
+      out += ch;
+      escaped = ch === "\\" ? !escaped : false;
+      if (ch === "\"" && !escaped) inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < input.length && /\s/.test(input[j])) j += 1;
+      if (input[j] === "}" || input[j] === "]") continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 let agentConfigCache;
 async function agentConfig() {
   if (agentConfigCache) return agentConfigCache;
@@ -245,7 +274,7 @@ async function agentConfig() {
       agentConfigCache = {};
       return agentConfigCache;
     }
-    const parsed = JSON.parse(stripJsonComments(raw.replace(/^\uFEFF/, "")));
+    const parsed = JSON.parse(stripTrailingCommas(stripJsonComments(raw.replace(/^\uFEFF/, ""))));
     agentConfigCache = parsed.providerUsage || {};
   } catch {
     agentConfigCache = {};

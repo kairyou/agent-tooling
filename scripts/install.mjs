@@ -137,7 +137,11 @@ function stripJsonComments(input) {
 function readJsonc(file) {
   if (!fs.existsSync(file)) return {};
   const raw = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
-  return raw.trim() ? JSON.parse(stripJsonComments(raw)) : {};
+  if (!raw.trim()) return {};
+  const errors = [];
+  const parsed = parseJsonc(raw, errors, { allowTrailingComma: true });
+  if (errors.length > 0) throw new Error(`Cannot parse ${file} as JSONC`);
+  return parsed ?? {};
 }
 
 function headerComments(text) {

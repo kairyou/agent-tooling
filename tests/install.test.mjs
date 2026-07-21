@@ -136,6 +136,16 @@ test("installer wires and unwires opencode usage plugins while preserving TUI co
   assert.equal(installed.plugin[0], "other-plugin");
   assert.match(installed.plugin[1], /integrations\/usage\/opencode-tui\.mjs$/);
 
+  // Reinstall over a runtime config that uses comments and trailing commas.
+  writeFileSync(
+    join(runtime, "config.jsonc"),
+    '// keep\n{\n  "custom": true,\n  "providerUsage": { "preset": "sub2api", },\n}\n'
+  );
+  runInstall(["usage", "-a", "opencode", "--opencode-config-dir", configDir], env);
+  const mergedCfg = readFileSync(join(runtime, "config.jsonc"), "utf8");
+  assert.match(mergedCfg, /"custom": true/);
+  assert.match(mergedCfg, /"preset": "sub2api"/);
+
   runInstall([
     "usage",
     "-a",

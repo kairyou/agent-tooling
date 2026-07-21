@@ -33,7 +33,11 @@ async function runProvider({ baseUrl, preset = "auto", config = {}, codexHome, a
     join(codexHome, "config.toml"),
     `model_provider = "mock"\n[model_providers.mock]\nname = "Mock"\nbase_url = "${baseUrl}"\n`
   );
-  writeFileSync(join(agentHome, "config.jsonc"), JSON.stringify({ providerUsage: config }));
+  // Comment + trailing commas: every provider test exercises tolerant parsing.
+  writeFileSync(
+    join(agentHome, "config.jsonc"),
+    `// agent-tools test config\n{\n  "providerUsage": ${JSON.stringify(config)},\n}\n`
+  );
 
   const result = await new Promise((resolve) => {
     const child = spawn(process.execPath, [PROVIDER_SCRIPT, "hook"], {
@@ -191,7 +195,9 @@ test("provider usage reads Veloera panel balance with Veloera scale", async () =
     res.statusCode = 404;
     res.end("{}");
   }, async (base) => {
-    const payload = await runProvider({ baseUrl: `${base}/v1`, preset: "veloera" });
+    // Preset comes from config.jsonc here (not env), so a config parse failure
+    // would fall back to the wrong quota scale and break the amounts below.
+    const payload = await runProvider({ baseUrl: `${base}/v1`, preset: "", config: { preset: "veloera" } });
     assert.equal(payload.systemMessage, "API | balance $7.5 | used $2.5/$10.0");
   });
 });

@@ -62,7 +62,7 @@ async function readStdin() {
 function readJsonFile(file) {
   try {
     if (!fs.existsSync(file)) return {};
-    const raw = stripJsonComments(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+    const raw = stripTrailingCommas(stripJsonComments(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")));
     return raw.trim() ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -97,6 +97,35 @@ function stripJsonComments(input) {
       while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i++;
       i++;
       continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+// Matches jsonc-parser's allowTrailingComma so every config.jsonc reader in
+// this package accepts the same syntax. Runs on comment-stripped input.
+function stripTrailingCommas(input) {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (inString) {
+      out += ch;
+      escaped = ch === "\\" ? !escaped : false;
+      if (ch === "\"" && !escaped) inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < input.length && /\s/.test(input[j])) j++;
+      if (input[j] === "}" || input[j] === "]") continue;
     }
     out += ch;
   }
