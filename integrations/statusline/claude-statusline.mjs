@@ -14,6 +14,7 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseJsonc } from "jsonc-parser";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const AGENT_TOOLS_HOME = process.env.AGENT_TOOLS_HOME || join(SCRIPT_DIR, "..", "..");
@@ -62,74 +63,14 @@ async function readStdin() {
 function readJsonFile(file) {
   try {
     if (!fs.existsSync(file)) return {};
-    const raw = stripTrailingCommas(stripJsonComments(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")));
-    return raw.trim() ? JSON.parse(raw) : {};
+    const raw = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+    if (!raw.trim()) return {};
+    const errors = [];
+    const parsed = parseJsonc(raw, errors, { allowTrailingComma: true });
+    return errors.length === 0 && parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }
-}
-
-function stripJsonComments(input) {
-  let out = "";
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i];
-    const next = input[i + 1];
-    if (inString) {
-      out += ch;
-      escaped = ch === "\\" ? !escaped : false;
-      if (ch === "\"" && !escaped) inString = false;
-      continue;
-    }
-    if (ch === "\"") {
-      inString = true;
-      out += ch;
-      continue;
-    }
-    if (ch === "/" && next === "/") {
-      while (i < input.length && input[i] !== "\n") i++;
-      out += "\n";
-      continue;
-    }
-    if (ch === "/" && next === "*") {
-      i += 2;
-      while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i++;
-      i++;
-      continue;
-    }
-    out += ch;
-  }
-  return out;
-}
-
-// Matches jsonc-parser's allowTrailingComma so every config.jsonc reader in
-// this package accepts the same syntax. Runs on comment-stripped input.
-function stripTrailingCommas(input) {
-  let out = "";
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i];
-    if (inString) {
-      out += ch;
-      escaped = ch === "\\" ? !escaped : false;
-      if (ch === "\"" && !escaped) inString = false;
-      continue;
-    }
-    if (ch === "\"") {
-      inString = true;
-      out += ch;
-      continue;
-    }
-    if (ch === ",") {
-      let j = i + 1;
-      while (j < input.length && /\s/.test(input[j])) j++;
-      if (input[j] === "}" || input[j] === "]") continue;
-    }
-    out += ch;
-  }
-  return out;
 }
 
 function parseArgs(argv) {
