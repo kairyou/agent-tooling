@@ -165,7 +165,7 @@ test("provider usage reads Sub2API balance from /api/v1/auth/me", async () => {
   });
 });
 
-test("provider usage reads AnyRouter/NewAPI-style panel balance", async () => {
+test("anyrouter preset parses a New API-shaped panel response", async () => {
   await withServer((req, res) => {
     if (req.url === "/api/usage/token/") {
       res.statusCode = 404;

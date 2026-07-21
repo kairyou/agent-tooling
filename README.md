@@ -109,8 +109,9 @@ it preserves top-of-file comments and existing values.
 For API relay / gateway setups: shows the relay's balance / quota inside the
 agent, so when you pay per use or have plan limits you always know how much you
 have spent and how much is left — without opening the gateway console.
-Works with compatible Sub2API-like,
-NewAPI/OneAPI/OneHub/DoneHub/Veloera/AnyRouter-like, and OpenRouter gateways.
+Works with the usage APIs of Sub2API, NewAPI/OneAPI-family panels (OneHub,
+DoneHub, Veloera, ...), and OpenRouter; compatibility can vary with a
+deployment's version and auth scheme.
 
 ```bash
 npx -y @kairyou/agent-tools@latest usage -a claude
@@ -139,7 +140,7 @@ endpoint and key — and tune `providerUsage` in `~/.agent-tools/config.jsonc`:
 ```jsonc
 {
   "providerUsage": {
-    "preset": "auto", // sub2api | new-api | veloera | anyrouter | openrouter | ...
+    "preset": "auto", // sub2api | new-api | veloera | openrouter | ...
     "userId": "",     // some NewAPI/Veloera panels require your panel user id
     "days": 30,       // spend window for the "30d" field (max 90)
     "debug": false    // true: log probes to ~/.agent-tools/logs/usage-debug.log

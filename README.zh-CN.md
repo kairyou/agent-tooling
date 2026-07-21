@@ -102,8 +102,8 @@ npx -y @kairyou/agent-tools@latest statusline -a claude
 
 面向使用 API 中转的场景: 在 agent 内直接显示中转网关的余额/额度, 按量付费或
 有套餐限额时, 随时知道花了多少, 还剩多少, 不用切出去登录网关后台.
-支持兼容 Sub2API-like, NewAPI/OneAPI/OneHub/DoneHub/Veloera/AnyRouter-like
-与 OpenRouter 的网关.
+支持 Sub2API, NewAPI/OneAPI 系面板 (OneHub, DoneHub, Veloera 等)
+与 OpenRouter 的用量接口; 同类网关的部署版本和鉴权方式不同, 兼容性可能有差异.
 
 ```bash
 npx -y @kairyou/agent-tools@latest usage -a claude
@@ -130,7 +130,7 @@ provider 的 `base_url` 和密钥; Claude Code: 读取 `ANTHROPIC_BASE_URL` 与
 ```jsonc
 {
   "providerUsage": {
-    "preset": "auto", // sub2api | new-api | veloera | anyrouter | openrouter | ...
+    "preset": "auto", // sub2api | new-api | veloera | openrouter | ...
     "userId": "",     // 部分 NewAPI/Veloera 面板需要填面板用户 id
     "days": 30,       // "30d" 字段的统计窗口(最大 90)
     "debug": false    // true: 探测过程写入 ~/.agent-tools/logs/usage-debug.log
