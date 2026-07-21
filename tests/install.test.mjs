@@ -33,6 +33,7 @@ test("installer wires and unwires Codex usage without removing unrelated hooks",
   const temp = mkdtempSync(join(tmpdir(), "agent-tools-install-"));
   const runtime = join(temp, "runtime");
   const hooksFile = join(temp, "hooks.json");
+  const skillsDir = join(temp, "skills");
   const env = { AGENT_TOOLS_HOME: runtime };
   const existingHook = {
     matcher: "^Bash$",
@@ -40,34 +41,75 @@ test("installer wires and unwires Codex usage without removing unrelated hooks",
   };
   writeFileSync(hooksFile, JSON.stringify({ hooks: { PreToolUse: [existingHook] } }));
 
-  runInstall(["usage", "-a", "codex", "--codex-hooks", hooksFile], env);
+  const args = [
+    "usage",
+    "-a",
+    "codex",
+    "--codex-hooks",
+    hooksFile,
+    "--codex-skills-dir",
+    skillsDir,
+  ];
+  runInstall(args, env);
   const installed = JSON.parse(readFileSync(hooksFile, "utf8"));
 
   assert.equal(installed.hooks.PreToolUse.length, 1);
   assert.deepEqual(installed.hooks.PreToolUse[0], existingHook);
   assert.equal(installed.hooks.UserPromptSubmit.length, 1);
-  assert.match(installed.hooks.UserPromptSubmit[0].hooks[0].command, /\/hooks\/codex\/usage-hook\.mjs"$/);
+  assert.match(installed.hooks.UserPromptSubmit[0].hooks[0].command, /\/integrations\/usage\/codex-hook\.mjs"$/);
   assert.equal(installed.hooks.Stop.length, 1);
+  const skillFile = join(skillsDir, "at-usage", "SKILL.md");
+  const skill = readFileSync(skillFile, "utf8");
+  assert.match(skill, /integrations\/usage\/cli\.mjs" --agent codex/);
+  assert.doesNotMatch(skill, /\{\{USAGE_/);
+  assert.equal(existsSync(join(runtime, "integrations", "usage", "cli.mjs")), true);
 
-  runInstall(["usage", "-a", "codex", "--codex-hooks", hooksFile, "--uninstall"], env);
+  runInstall([...args, "--uninstall"], env);
   const afterUninstall = JSON.parse(readFileSync(hooksFile, "utf8"));
 
   assert.equal(afterUninstall.hooks.PreToolUse.length, 1);
   assert.deepEqual(afterUninstall.hooks.PreToolUse[0], existingHook);
   assert.equal(afterUninstall.hooks.UserPromptSubmit, undefined);
   assert.equal(afterUninstall.hooks.Stop, undefined);
+  assert.equal(existsSync(join(skillsDir, "at-usage")), false);
 });
 
-test("installer rejects Claude usage as a standalone capability", () => {
+test("installer installs Claude usage as a managed local skill", () => {
   const temp = mkdtempSync(join(tmpdir(), "agent-tools-install-"));
-  const result = runInstallRaw(["usage", "-a", "claude", "--dry-run"], {
-    AGENT_TOOLS_HOME: join(temp, "runtime"),
-  });
+  const runtime = join(temp, "runtime with spaces");
+  const skillsDir = join(temp, "skills");
+  const args = ["usage", "-a", "claude", "--claude-skills-dir", skillsDir];
+  const env = { AGENT_TOOLS_HOME: runtime };
 
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /Unsupported capability\/agent combination: usage -a claude/);
-  assert.match(result.stderr, /statusline -a claude/);
-  assert.equal(result.stdout, "");
+  runInstall(args, env);
+  const skillDir = join(skillsDir, "at-usage");
+  const skill = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+  assert.match(skill, /node "[^"]*runtime with spaces\/integrations\/usage\/cli\.mjs" --agent claude/);
+  assert.match(skill, /Never run `npx`/);
+  assert.equal(
+    JSON.parse(readFileSync(join(skillDir, ".agent-tools-managed.json"), "utf8")).capability,
+    "usage"
+  );
+
+  runInstall([...args, "--uninstall"], env);
+  assert.equal(existsSync(skillDir), false);
+});
+
+test("usage install refuses to overwrite an unmanaged skill", () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tools-install-"));
+  const skillsDir = join(temp, "skills");
+  const skillDir = join(skillsDir, "at-usage");
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), "user-owned\n");
+
+  const result = runInstallRaw(
+    ["usage", "-a", "claude", "--claude-skills-dir", skillsDir],
+    { AGENT_TOOLS_HOME: join(temp, "runtime") }
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Refusing to overwrite existing unowned skill directory/);
+  assert.equal(readFileSync(join(skillDir, "SKILL.md"), "utf8"), "user-owned\n");
 });
 
 test("installer wires and unwires opencode usage plugins while preserving TUI config", () => {
@@ -85,13 +127,14 @@ test("installer wires and unwires opencode usage plugins while preserving TUI co
   const installedText = readFileSync(tuiFile, "utf8");
   const installed = parseJsonc(installedText);
   assert.equal(existsSync(stub), true);
-  assert.match(readFileSync(stub, "utf8"), /plugins\/opencode\/usage-plugin\.mjs/);
-  assert.equal(existsSync(join(runtime, "plugins", "opencode", "usage-plugin.mjs")), true);
-  assert.equal(existsSync(join(runtime, "plugins", "opencode", "usage-tui.mjs")), true);
+  assert.match(readFileSync(stub, "utf8"), /integrations\/usage\/opencode-plugin\.mjs/);
+  assert.equal(existsSync(join(runtime, "integrations", "usage", "opencode-plugin.mjs")), true);
+  assert.equal(existsSync(join(runtime, "integrations", "usage", "opencode-tui.mjs")), true);
+  assert.equal(existsSync(join(runtime, "integrations", "usage", "cli.mjs")), true);
   assert.match(installedText, /keep this comment/);
   assert.equal(installed.theme, "system");
   assert.equal(installed.plugin[0], "other-plugin");
-  assert.match(installed.plugin[1], /plugins\/opencode\/usage-tui\.mjs$/);
+  assert.match(installed.plugin[1], /integrations\/usage\/opencode-tui\.mjs$/);
 
   runInstall([
     "usage",

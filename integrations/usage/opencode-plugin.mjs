@@ -1,4 +1,4 @@
-import { queryProviderUsage } from "../../lib/usage.mjs";
+import { queryProviderUsage } from "./core.mjs";
 
 const DEFAULT_REFRESH_MS = 60_000;
 

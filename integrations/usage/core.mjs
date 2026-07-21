@@ -1171,6 +1171,10 @@ export async function queryProviderUsage(input, options = {}) {
 }
 
 async function refresh(agent = "codex") {
+  return await queryAgentProviderUsage(agent);
+}
+
+export async function queryAgentProviderUsage(agent = "codex") {
   return await queryUsageContext(await usageContext(agent), {
     agent,
     rememberSnapshot: agent === "claude",

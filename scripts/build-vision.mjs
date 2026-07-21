@@ -12,8 +12,8 @@ const STAGE_DIR = path.join(ROOT, "dist", `.vision-build-${process.pid}-${Date.n
 try {
   await build({
     entryPoints: {
-      "mcp-server": path.join(ROOT, "plugins", "vision", "mcp-server.mjs"),
-      cli: path.join(ROOT, "lib", "vision", "cli.mjs"),
+      "mcp-server": path.join(ROOT, "integrations", "vision", "mcp-server.mjs"),
+      cli: path.join(ROOT, "integrations", "vision", "lib", "cli.mjs"),
     },
     outdir: STAGE_DIR,
     bundle: true,

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const AGENT_TOOLS_HOME = process.env.AGENT_TOOLS_HOME || path.resolve(SCRIPT_DIR, "..", "..");
-const USAGE_SCRIPT = path.join(AGENT_TOOLS_HOME, "lib", "usage.mjs");
+const USAGE_SCRIPT = path.join(SCRIPT_DIR, "core.mjs");
 const LOG_PATH = path.join(AGENT_TOOLS_HOME, "logs", "usage-hook.log");
 const TIMEOUT_MS = Number(process.env.AGENT_TOOLS_USAGE_HOOK_TIMEOUT_MS || 4500);
 const MAX_LOG_BYTES = Number(process.env.AGENT_TOOLS_USAGE_HOOK_LOG_BYTES || 256 * 1024);

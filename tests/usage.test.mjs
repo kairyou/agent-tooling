@@ -8,8 +8,9 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PROVIDER_SCRIPT = join(ROOT, "lib", "usage.mjs");
-const CODEX_USAGE_HOOK = join(ROOT, "hooks", "codex", "usage-hook.mjs");
+const PROVIDER_SCRIPT = join(ROOT, "integrations", "usage", "core.mjs");
+const USAGE_CLI = join(ROOT, "integrations", "usage", "cli.mjs");
+const CODEX_USAGE_HOOK = join(ROOT, "integrations", "usage", "codex-hook.mjs");
 
 async function withServer(handler, fn) {
   const server = http.createServer(handler);
@@ -65,6 +66,78 @@ async function runProvider({ baseUrl, preset = "auto", config = {}, codexHome, a
   assert.equal(result.stderr, "");
   return JSON.parse(result.stdout);
 }
+
+async function runUsageCli(agent, env) {
+  return await new Promise((resolve) => {
+    const child = spawn(process.execPath, agent ? [USAGE_CLI, "--agent", agent] : [USAGE_CLI], {
+      cwd: ROOT,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("exit", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+test("local usage CLI queries Codex and Claude without a package manager", async () => {
+  await withServer((req, res) => {
+    if (req.url === "/api/v1/auth/me") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ code: 0, data: { balance: 18.75 } }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  }, async (baseUrl) => {
+    const temp = mkdtempSync(join(tmpdir(), "agent-tools-usage-cli-"));
+    const codexHome = join(temp, "codex");
+    const agentHome = join(temp, "agent");
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(agentHome, { recursive: true });
+    writeFileSync(join(codexHome, "auth.json"), JSON.stringify({ OPENAI_API_KEY: "test-key" }));
+    writeFileSync(
+      join(codexHome, "config.toml"),
+      `model_provider = "mock"\n[model_providers.mock]\nname = "Mock"\nbase_url = "${baseUrl}/v1"\n`
+    );
+    writeFileSync(join(agentHome, "config.jsonc"), JSON.stringify({ providerUsage: {} }));
+    const common = {
+      AGENT_TOOLS_HOME: agentHome,
+      PROVIDER_USAGE_PRESET: "sub2api",
+      PROVIDER_USAGE_BASE_URL: "",
+      SUB2API_BASE_URL: "",
+    };
+
+    const codex = await runUsageCli("codex", {
+      ...common,
+      CODEX_HOME: codexHome,
+      OPENAI_BASE_URL: "",
+    });
+    assert.deepEqual(codex, { status: 0, stdout: "API | balance $18.8\n", stderr: "" });
+
+    const claude = await runUsageCli("claude", {
+      ...common,
+      ANTHROPIC_BASE_URL: `${baseUrl}/v1`,
+      ANTHROPIC_AUTH_TOKEN: "test-key",
+      ANTHROPIC_API_KEY: "",
+    });
+    assert.deepEqual(claude, { status: 0, stdout: "API | balance $18.8\n", stderr: "" });
+  });
+});
+
+test("local usage CLI rejects unsupported agents without querying", async () => {
+  const result = await runUsageCli("opencode", {});
+  assert.equal(result.status, 2);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "Unsupported agent: opencode\n");
+
+  const missing = await runUsageCli(null, {});
+  assert.equal(missing.status, 2);
+  assert.equal(missing.stdout, "");
+  assert.equal(missing.stderr, "Missing --agent <claude|codex>\n");
+});
 
 test("provider usage reads Sub2API balance from /api/v1/auth/me", async () => {
   await withServer((req, res) => {

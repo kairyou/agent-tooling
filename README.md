@@ -1,19 +1,19 @@
 # Agent Tools
 
-Reusable skills and runtime integrations for Codex, Claude Code, and opencode. This repository keeps each capability in predictable locations so projects can opt into only what they need.
+Reusable Agent Skills, plus runtime integrations for Codex, Claude Code, and opencode.
 
 [中文](README.zh-CN.md)
 
-## Directory Layout
+## Repository Structure
 
 ```text
 agent-tools/
 ├── .claude-plugin/    # Claude Code/plugin ecosystem manifest.
 ├── .codex-plugin/     # Codex plugin manifest.
-├── hooks/             # Shared and agent-specific hook integrations.
-├── plugins/           # Runtime plugins loaded by supported agents.
-│   └── vision/        # Cross-model image understanding (inspect_image MCP server + bundled at-vision skill).
-├── scripts/           # Install, sync, validation, and maintenance scripts.
+├── integrations/      # Installable capabilities, one directory each; files named by agent + form.
+│   ├── statusline/    # Claude Code command-backed statusLine script.
+│   ├── usage/         # Provider usage (query core + codex hook, opencode plugins, CLI, at-usage skill template).
+│   └── vision/        # Cross-model image understanding (inspect_image MCP server + at-vision skill).
 ├── skills/            # Reusable Agent Skills for CLI discovery and plugin manifests.
 │   ├── workflow/      # Workflow-oriented skills.
 │   │   ├── at-commit/   # Conventional Commit message skill.
@@ -21,9 +21,7 @@ agent-tools/
 │   │   └── at-simplify/ # Reduce complexity and duplication in changes.
 │   └── integrations/  # Skills that integrate external systems.
 │       └── at-zentao/   # ZenTao bug/task fixing workflow.
-├── statusline/        # Statusline scripts/templates, grouped by agent.
-│   └── claude/        # Claude command-backed statusLine script + example config.
-└── lib/               # Shared implementation used by hooks, statuslines, and installers.
+└── scripts/           # Install, sync, validation, and maintenance scripts.
 ```
 
 ## Skills
@@ -85,7 +83,80 @@ Usage:
 
 Config: `~/.agent-tools/config.jsonc` → `"zentao": { "url", "account", "password" }`. First run guides you; fill `password` in the file yourself (or env `ZENTAO_PASSWORD`), never in chat.
 
-## Plugins
+## Integrations
+
+Runtime capabilities, installed per agent:
+
+```bash
+npx -y @kairyou/agent-tools@latest <capability> -a <agent...>
+```
+
+`--dry-run` previews, `--uninstall` removes, and re-running the install command
+updates.
+
+| Capability | Claude Code | Codex | OpenCode |
+| --- | --- | --- | --- |
+| `statusline` | ✓ | – | – |
+| `usage` | `/at-usage` skill | hook + `$at-usage` skill | toast + `/at-usage` command |
+| `vision` | ✓ | ✓ | ✓ |
+
+### Statusline
+
+```bash
+npx -y @kairyou/agent-tools@latest statusline -a claude
+```
+
+The installer writes `statusLine` to `~/.claude/settings.json`. The default
+output is:
+
+```text
+⎇ main | Opus 4.8 | 5h 7% ⟳2h54m | w 41% ⟳3d1h
+```
+
+Here `5h` and `w` are Claude's rolling usage windows; `⟳` is the reset countdown.
+When a compatible API relay is active, the statusline also appends provider usage.
+
+To choose what appears, edit `statusline.fields` in
+`~/.agent-tools/config.jsonc`. The installer may add new default keys on update;
+it preserves top-of-file comments and existing values.
+
+### Provider usage
+
+Shows the active API provider's balance / quota inside each agent.
+
+```bash
+npx -y @kairyou/agent-tools@latest usage -a claude
+npx -y @kairyou/agent-tools@latest usage -a codex
+npx -y @kairyou/agent-tools@latest usage -a opencode
+```
+
+- **Claude Code** — installs the `at-usage` skill into `~/.claude/skills`; invoke
+  `/at-usage` to show the current usage in the conversation.
+- **Codex** — adds a hook to `UserPromptSubmit` and `Stop` in `~/.codex/hooks.json`
+  and the `at-usage` skill to `~/.agents/skills`. Run `/hooks` inside Codex once
+  to approve it. Hook output only appears in the Codex CLI; in clients that do
+  not show it (e.g. Paseo), invoke `$at-usage`.
+- **OpenCode** — adds server and TUI plugins: usage refreshes when the session
+  goes idle and shows as a toast, and `/at-usage` shows the latest cached value.
+  Restart opencode after installing or updating.
+
+Output examples:
+
+```text
+# Subscription / plan quota.
+API | D $0.0/$100 | W $0.0/$300 | Exp 07-08
+
+# Wallet balance.
+API | balance $362 | today $61.7 | 30d $566
+```
+
+Fields: `D/W/M` are daily/weekly/monthly spend against plan limits; `Exp` is
+the plan expiry; `balance` is wallet credit; `today` and `30d` are API spend.
+
+#### Supported gateways
+
+Balance, quota, and plan usage queries support compatible Sub2API-like,
+NewAPI/OneAPI/OneHub/DoneHub/Veloera/AnyRouter-like, and OpenRouter gateways.
 
 ### Vision (cross-model image understanding)
 
@@ -94,16 +165,14 @@ Lets a main model that cannot see images ask a multimodal model specific questio
 #### Install
 
 ```bash
-# One command per agent (or list several)
 npx -y @kairyou/agent-tools@latest vision -a claude
 npx -y @kairyou/agent-tools@latest vision -a codex claude opencode
-
-# Preview or uninstall (uninstall keeps your vision provider config)
-npx -y @kairyou/agent-tools@latest vision -a claude --dry-run
-npx -y @kairyou/agent-tools@latest vision -a claude --uninstall
 ```
 
-Install atomically writes a prebuilt, self-contained MCP runtime to `~/.agent-tools/vision-runtime`, registers it per agent (Claude Code: `~/.claude.json`; Codex: a marker-delimited block in `~/.codex/config.toml`; OpenCode: `opencode.json`), and installs the `at-vision` skill into the agent's global skills directory (Claude Code: `~/.claude/skills`; Codex: `~/.agents/skills`; OpenCode: its config directory's `skills`). Installation does not download a second dependency tree; re-run the command to update. Uninstalling the last agent that references the shared runtime removes it while preserving the vision provider config.
+Uninstalling keeps your vision provider config. The installer registers the
+`inspect_image` MCP server for each agent (Claude Code: `~/.claude.json`; Codex:
+`~/.codex/config.toml`; OpenCode: `opencode.json`) and installs the `at-vision`
+skill into the agent's skills directory.
 
 #### Configure
 
@@ -136,96 +205,7 @@ To diagnose the provider setup or test recognition quality manually:
 npx -y @kairyou/agent-tools@latest inspect-image <path|url> -q "What are the navbar background color and height?"
 ```
 
-## Runtime integrations
-
-### Claude Code
-
-#### Statusline
-
-```bash
-# Install or update
-npx -y @kairyou/agent-tools@latest statusline -a claude
-
-# Preview or uninstall
-npx -y @kairyou/agent-tools@latest statusline -a claude --dry-run
-npx -y @kairyou/agent-tools@latest statusline -a claude --uninstall
-```
-
-The installer writes `statusLine` to `~/.claude/settings.json`. The default
-output is:
-
-```text
-⎇ main | Opus 4.8 | 5h 7% ⟳2h54m | w 41% ⟳3d1h
-```
-
-Here `5h` and `w` are Claude's rolling usage windows; `⟳` is the reset countdown.
-When a compatible API relay is active, the statusline also appends provider usage.
-
-To choose what appears, edit `statusline.fields` in
-`~/.agent-tools/config.jsonc`. The installer may add new default keys on update;
-it preserves top-of-file comments and existing values.
-
-### Codex
-
-#### Provider usage hook
-
-```bash
-# Install or update
-npx -y @kairyou/agent-tools@latest usage -a codex
-
-# Preview or uninstall
-npx -y @kairyou/agent-tools@latest usage -a codex --dry-run
-npx -y @kairyou/agent-tools@latest usage -a codex --uninstall
-```
-
-The installer adds the hook to `UserPromptSubmit` and `Stop` in
-`~/.codex/hooks.json`. After installation, run `/hooks` inside Codex and approve
-the agent-tools usage hooks.
-
-Output examples:
-
-```text
-# Subscription / plan quota.
-warning: API | D $0.0/$100 | W $0.0/$300 | Exp 07-08
-
-# Wallet balance.
-warning: API | balance $362 | today $61.7 | 30d $566
-```
-
-Fields: `D/W/M` are daily/weekly/monthly spend against plan limits; `Exp` is
-the plan expiry; `balance` is wallet credit; `today` and `30d` are API spend.
-
-### OpenCode
-
-#### Provider usage plugin
-
-```bash
-# Install or update
-npx -y @kairyou/agent-tools@latest usage -a opencode
-
-# Preview or uninstall
-npx -y @kairyou/agent-tools@latest usage -a opencode --dry-run
-npx -y @kairyou/agent-tools@latest usage -a opencode --uninstall
-```
-
-The installer adds global server and TUI plugins. After the active session
-becomes idle, the server plugin refreshes usage and shows it as a toast. The TUI
-plugin also registers `/at-usage` for the latest cached value. Restart opencode
-after installing or updating the plugins.
-
-Toast example:
-
-```text
-Provider usage
-balance $244 | today $45.8 | 30d $604
-```
-
-### Supported gateways
-
-Balance, quota, and plan usage queries support compatible Sub2API-like,
-NewAPI/OneAPI/OneHub/DoneHub/Veloera/AnyRouter-like, and OpenRouter gateways.
-
-### Run from Git
+## Run from Git
 
 To run directly from the repository, replace the npm package name with
 `github:kairyou/agent-tools` (Git required):

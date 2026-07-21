@@ -20,7 +20,9 @@ const AGENT_TOOLS_HOME = process.env.AGENT_TOOLS_HOME || join(SCRIPT_DIR, "..", 
 const DEFAULT_CONFIG_FILE = join(AGENT_TOOLS_HOME, "config.jsonc");
 const SNAPSHOT_FILE = join(AGENT_TOOLS_HOME, "cache", "usage-snapshot.json");
 const REFRESH_STATE_FILE = join(AGENT_TOOLS_HOME, "cache", "usage-refresh-state.json");
-const USAGE_RUNTIME = join(AGENT_TOOLS_HOME, "lib", "usage.mjs");
+// Cross-integration dependency: statusline renders provider usage via the
+// usage integration's query engine.
+const USAGE_RUNTIME = join(AGENT_TOOLS_HOME, "integrations", "usage", "core.mjs");
 const DEFAULT_SNAPSHOT_TTL_MS = 60_000;
 const DEFAULT_REFRESH_COOLDOWN_MS = 30_000;
 const DEFAULT_FAILURE_BACKOFF_MS = 120_000;

@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { test } from "node:test";
-import { createVisionService, QUESTION_LIMITS, validateQuestions } from "../lib/vision/inspect.mjs";
-import { inspectWithAnthropicCompatible } from "../lib/vision/providers/anthropic-compatible.mjs";
-import { inspectWithOpenAICompatible } from "../lib/vision/providers/openai-compatible.mjs";
-import { buildPrompt, normalizeAnswers } from "../lib/vision/providers/shared.mjs";
-import { createLimiter } from "../lib/vision/rate-limit.mjs";
+import { createVisionService, QUESTION_LIMITS, validateQuestions } from "../integrations/vision/lib/inspect.mjs";
+import { inspectWithAnthropicCompatible } from "../integrations/vision/lib/providers/anthropic-compatible.mjs";
+import { inspectWithOpenAICompatible } from "../integrations/vision/lib/providers/openai-compatible.mjs";
+import { buildPrompt, normalizeAnswers } from "../integrations/vision/lib/providers/shared.mjs";
+import { createLimiter } from "../integrations/vision/lib/rate-limit.mjs";
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(8)]);
 const IMAGE = {

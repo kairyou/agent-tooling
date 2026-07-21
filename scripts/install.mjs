@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // agent-tools installer: wires statusline / usage into each agent's config.
-// Skills are NOT handled here — install those with `npx skills add`.
+// Runtime-dependent skills are installed with their capability. Standalone
+// workflow/integration skills are still handled by `npx skills add`.
 //
 // Capabilities (all global for now — they target the user-level config):
 //   statusline  Claude Code statusLine script (claude only).
-//   usage       Active API provider quota/balance (codex + opencode).
+//   usage       Active API provider quota/balance (all agents).
 //   vision      inspect_image MCP server + at-vision skill (all agents).
 //
 // Standalone commands (dispatched before capability parsing):
@@ -13,8 +14,10 @@
 //
 // Targets:
 //   claude   -> ~/.claude/settings.json (statusLine key)
+//               + ~/.claude/skills/at-usage
 //               ~/.claude.json (vision MCP) + ~/.claude/skills (at-vision)
 //   codex    -> ~/.codex/hooks.json (standalone hooks file)
+//               + ~/.agents/skills/at-usage
 //               ~/.codex/config.toml (vision MCP) + ~/.agents/skills (at-vision)
 //   opencode -> ~/.config/opencode/ (server + TUI plugins,
 //               vision MCP in opencode.json + skills/at-vision)
@@ -54,34 +57,38 @@ const INSTALL_ROOT =
 const META_KEY = "_agentTools";
 const META_VERSION = 1;
 const SOURCE = {
-  codexUsageHook: path.join(REPO_ROOT, "hooks", "codex", "usage-hook.mjs"),
-  usageScript: path.join(REPO_ROOT, "lib", "usage.mjs"),
+  codexUsageHook: path.join(REPO_ROOT, "integrations", "usage", "codex-hook.mjs"),
+  usageScript: path.join(REPO_ROOT, "integrations", "usage", "core.mjs"),
+  usageCli: path.join(REPO_ROOT, "integrations", "usage", "cli.mjs"),
   config: path.join(REPO_ROOT, "config.default.jsonc"),
-  claudeStatusline: path.join(REPO_ROOT, "statusline", "claude", "statusline.mjs"),
-  opencodeUsagePlugin: path.join(REPO_ROOT, "plugins", "opencode", "usage-plugin.mjs"),
-  opencodeUsageTui: path.join(REPO_ROOT, "plugins", "opencode", "usage-tui.mjs"),
+  claudeStatusline: path.join(REPO_ROOT, "integrations", "statusline", "claude-statusline.mjs"),
+  opencodeUsagePlugin: path.join(REPO_ROOT, "integrations", "usage", "opencode-plugin.mjs"),
+  opencodeUsageTui: path.join(REPO_ROOT, "integrations", "usage", "opencode-tui.mjs"),
 };
 const RUNTIME = {
-  codexUsageHook: path.join(INSTALL_ROOT, "hooks", "codex", "usage-hook.mjs"),
-  usageScript: path.join(INSTALL_ROOT, "lib", "usage.mjs"),
+  codexUsageHook: path.join(INSTALL_ROOT, "integrations", "usage", "codex-hook.mjs"),
+  usageScript: path.join(INSTALL_ROOT, "integrations", "usage", "core.mjs"),
+  usageCli: path.join(INSTALL_ROOT, "integrations", "usage", "cli.mjs"),
   config: path.join(INSTALL_ROOT, "config.jsonc"),
-  claudeStatusline: path.join(INSTALL_ROOT, "statusline", "claude", "statusline.mjs"),
-  opencodeUsagePlugin: path.join(INSTALL_ROOT, "plugins", "opencode", "usage-plugin.mjs"),
-  opencodeUsageTui: path.join(INSTALL_ROOT, "plugins", "opencode", "usage-tui.mjs"),
+  claudeStatusline: path.join(INSTALL_ROOT, "integrations", "statusline", "claude-statusline.mjs"),
+  opencodeUsagePlugin: path.join(INSTALL_ROOT, "integrations", "usage", "opencode-plugin.mjs"),
+  opencodeUsageTui: path.join(INSTALL_ROOT, "integrations", "usage", "opencode-tui.mjs"),
 };
 const ALL_CAPS = ["statusline", "usage", "vision"];
 const ALL_AGENTS = ["claude", "codex", "opencode"];
 const AGENT_CAPS = {
-  claude: ["statusline", "vision"],
+  claude: ["statusline", "usage", "vision"],
   codex: ["usage", "vision"],
   opencode: ["usage", "vision"],
 };
 const VISION_MCP_NAME = "agent-tools-vision";
 const VISION_SKILL_NAME = "at-vision";
-// The at-vision skill ships inside the vision feature dir (plugins/vision),
+// The at-vision skill ships inside the vision capability dir (integrations/vision),
 // not skills/: it is unusable without the MCP server, so it must not surface
 // as an independently installable skill.
-const VISION_SKILL_SRC = path.join(REPO_ROOT, "plugins", "vision", "skills", VISION_SKILL_NAME);
+const VISION_SKILL_SRC = path.join(REPO_ROOT, "integrations", "vision", "skills", VISION_SKILL_NAME);
+const USAGE_SKILL_NAME = "at-usage";
+const USAGE_SKILL_SRC = path.join(REPO_ROOT, "integrations", "usage", "skills", USAGE_SKILL_NAME);
 const VISION_BUNDLED_MCP_SERVER = path.join(REPO_ROOT, "dist", "vision", "mcp-server.mjs");
 const VISION_BUNDLED_CLI = path.join(REPO_ROOT, "dist", "vision", "cli.mjs");
 
@@ -173,7 +180,7 @@ function isOpenCodeUsageTuiEntry(entry) {
   const spec = Array.isArray(entry) ? entry[0] : entry;
   return (
     typeof spec === "string" &&
-    /\/plugins\/opencode\/usage-tui\.mjs$/i.test(spec.replace(/\\/g, "/"))
+    /\/integrations\/usage\/opencode-tui\.mjs$/i.test(spec.replace(/\\/g, "/"))
   );
 }
 
@@ -254,6 +261,7 @@ function installRuntimeAssets(opts) {
       addFile(SOURCE.opencodeUsageTui, RUNTIME.opencodeUsageTui);
     }
     addFile(SOURCE.usageScript, RUNTIME.usageScript);
+    addFile(SOURCE.usageCli, RUNTIME.usageCli);
     addFile(SOURCE.config, RUNTIME.config, { mergeJsonc: true });
   }
   if (files.length === 0) return;
@@ -264,7 +272,7 @@ function installRuntimeAssets(opts) {
 function parseArgs(argv) {
   const opts = {
     agents: [],
-    capabilities: [],
+    integrations: [],
     settings: null,
     codexHooks: null,
     opencodeConfigDir: null,
@@ -315,15 +323,15 @@ function parseArgs(argv) {
           console.error(`Unknown option: ${a}`);
           process.exit(2);
         }
-        opts.capabilities.push(a);
+        opts.integrations.push(a);
     }
   }
   if (opts.agents.length === 0) opts.agents = ["claude"];
-  if (!opts.help && opts.capabilities.length === 0) {
+  if (!opts.help && opts.integrations.length === 0) {
     console.error(`Missing capability (available: ${ALL_CAPS.join(", ")})`);
     process.exit(2);
   }
-  for (const name of opts.capabilities) {
+  for (const name of opts.integrations) {
     if (!ALL_CAPS.includes(name)) {
       console.error(`Unknown capability: ${name} (available: ${ALL_CAPS.join(", ")})`);
       process.exit(2);
@@ -333,14 +341,14 @@ function parseArgs(argv) {
 }
 
 function wants(opts, cap) {
-  return opts.capabilities.length === 0 || opts.capabilities.includes(cap);
+  return opts.integrations.length === 0 || opts.integrations.includes(cap);
 }
 
 function validateAgentCapabilities(opts) {
   const invalid = [];
   for (const agent of opts.agents) {
     const supported = AGENT_CAPS[agent] || [];
-    for (const cap of opts.capabilities) {
+    for (const cap of opts.integrations) {
       if (!supported.includes(cap)) invalid.push(`${cap} -a ${agent}`);
     }
   }
@@ -351,7 +359,6 @@ function validateAgentCapabilities(opts) {
   for (const agent of ALL_AGENTS) {
     console.error(`  ${agent}: ${AGENT_CAPS[agent].join(", ")}`);
   }
-  console.error("Claude API usage is refreshed by the statusline capability; use `statusline -a claude`.");
   process.exit(2);
 }
 
@@ -409,7 +416,7 @@ function isOurProviderUsageEntry(entry) {
     entry.hooks.some(
       (h) =>
         typeof h?.command === "string" &&
-        /(?:^|[/\\])(?:usage-hook|usage)\.mjs(?:["\s]|$)/.test(h.command)
+        /(?:^|[/\\])codex-hook\.mjs(?:["\s]|$)/.test(h.command)
     )
   );
 }
@@ -434,25 +441,26 @@ function applyProviderUsage(cfg, { remove }) {
 
 // ---- Vision capability helpers. ----
 
-const VISION_RUNTIME_DIR = path.join(INSTALL_ROOT, "vision-runtime");
+// The installed tree mirrors the package tree, so the bundled runtime lands in
+// dist/vision just like in the package.
+const VISION_RUNTIME_DIR = path.join(INSTALL_ROOT, "dist", "vision");
 const VISION_RATE_LIMIT_STATE = path.join(INSTALL_ROOT, "cache", "vision-rate-limit.json");
 const VISION_DIST_DIR = path.join(REPO_ROOT, "dist", "vision");
 const VISION_RUNTIME_SERVER = path.join(VISION_RUNTIME_DIR, "mcp-server.mjs");
 const VISION_RUNTIME_CLI = path.join(VISION_RUNTIME_DIR, "cli.mjs");
-const VISION_LEGACY_RUNTIME_SERVER = path.join(
-  VISION_RUNTIME_DIR,
-  "plugins",
-  "vision",
-  "mcp-server.mjs"
-);
-const VISION_SKILL_MARKER = ".agent-tools-managed.json";
+const SKILL_MARKER = ".agent-tools-managed.json";
 const VISION_SKILL_MARKER_DATA = Object.freeze({
   owner: "@kairyou/agent-tools",
   capability: "vision",
   artifact: "skill",
 });
+const USAGE_SKILL_MARKER_DATA = Object.freeze({
+  owner: "@kairyou/agent-tools",
+  capability: "usage",
+  artifact: "skill",
+});
 // Vision is bundled at release time. Install atomically swaps two self-contained
-// entry files into ~/.agent-tools/vision-runtime, so hosts never run npm and a
+// entry files into ~/.agent-tools/dist/vision, so hosts never run npm and a
 // failed update cannot destroy the previously working runtime.
 function visionMcpCommand() {
   return { command: "node", args: [fwd(VISION_RUNTIME_SERVER)] };
@@ -472,14 +480,17 @@ function sameFilePath(left, right) {
   return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
+function isVisionServerPath(value) {
+  return sameFilePath(value, VISION_RUNTIME_SERVER);
+}
+
 function isClaudeVisionMcp(value, mcp = visionMcpCommand()) {
   return Boolean(
     value &&
       value.command === mcp.command &&
       Array.isArray(value.args) &&
       value.args.length === 1 &&
-      (sameFilePath(value.args[0], mcp.args[0]) ||
-        sameFilePath(value.args[0], VISION_LEGACY_RUNTIME_SERVER))
+      isVisionServerPath(value.args[0])
   );
 }
 
@@ -490,8 +501,7 @@ function isOpenCodeVisionMcp(value, mcp = visionMcpCommand()) {
       Array.isArray(value.command) &&
       value.command.length === 2 &&
       value.command[0] === mcp.command &&
-      (sameFilePath(value.command[1], mcp.args[0]) ||
-        sameFilePath(value.command[1], VISION_LEGACY_RUNTIME_SERVER))
+      isVisionServerPath(value.command[1])
   );
 }
 
@@ -551,37 +561,26 @@ function installVisionRuntime(opts) {
   }
 }
 
-function isManagedVisionSkillDir(dest) {
-  const marker = path.join(dest, VISION_SKILL_MARKER);
+function isManagedSkillDir(dest, markerData) {
+  const marker = path.join(dest, SKILL_MARKER);
   if (!fs.existsSync(marker)) return false;
   try {
     const value = JSON.parse(fs.readFileSync(marker, "utf8"));
-    return Object.entries(VISION_SKILL_MARKER_DATA).every(([key, expected]) => value?.[key] === expected);
+    return Object.entries(markerData).every(([key, expected]) => value?.[key] === expected);
   } catch {
     return false;
   }
 }
 
-function isLegacyManagedVisionSkillDir(dest) {
-  try {
-    const entries = fs.readdirSync(dest);
-    if (entries.length !== 1 || entries[0] !== "SKILL.md") return false;
-    const skill = fs.readFileSync(path.join(dest, "SKILL.md"), "utf8");
-    return (
-      /^---\s*[\s\S]*?^name:\s*at-vision\s*$/m.test(skill) &&
-      skill.includes("# Visual Reasoning Policy") &&
-      skill.includes("`inspect_image` MCP tool (server `agent-tools-vision`)")
-    );
-  } catch {
-    return false;
-  }
-}
-
-function installSkillDir(skillsRoot, { remove, dryRun }) {
-  const dest = path.join(skillsRoot, VISION_SKILL_NAME);
+function installManagedSkillDir(
+  skillsRoot,
+  { name, source, markerData, replacements, remove, dryRun }
+) {
+  const dest = path.join(skillsRoot, name);
+  const isManaged = () => isManagedSkillDir(dest, markerData);
   if (remove) {
     if (!fs.existsSync(dest)) return;
-    if (!isManagedVisionSkillDir(dest)) {
+    if (!isManaged()) {
       console.log(`  kept unmanaged ${dest}`);
       return;
     }
@@ -593,36 +592,59 @@ function installSkillDir(skillsRoot, { remove, dryRun }) {
     console.log(`  removed ${dest}`);
     return;
   }
-  if (fs.existsSync(dest) && !isManagedVisionSkillDir(dest)) {
-    if (isLegacyManagedVisionSkillDir(dest)) {
-      console.log(`  adopting legacy managed skill ${dest}`);
-    } else {
-      console.error(
-        `  Refusing to overwrite existing unowned skill directory ${dest}. ` +
-          `Move or remove it, then re-run the install.`
-      );
-      process.exit(1);
-    }
+  if (fs.existsSync(dest) && !isManaged()) {
+    console.error(
+      `  Refusing to overwrite existing unowned skill directory ${dest}. ` +
+        `Move or remove it, then re-run the install.`
+    );
+    process.exit(1);
   }
   if (dryRun) {
-    console.log(`  [dry-run] would copy ${VISION_SKILL_SRC} -> ${dest}`);
+    console.log(`  [dry-run] would copy ${source} -> ${dest}`);
     return;
   }
   fs.rmSync(dest, { recursive: true, force: true });
-  fs.cpSync(VISION_SKILL_SRC, dest, { recursive: true });
+  fs.cpSync(source, dest, { recursive: true });
   const skillFile = path.join(dest, "SKILL.md");
-  const skill = fs.readFileSync(skillFile, "utf8");
-  const token = "{{VISION_CLI_PATH}}";
-  if (!skill.includes(token)) {
-    fs.rmSync(dest, { recursive: true, force: true });
-    throw new Error(`Vision skill template is missing ${token}`);
+  let skill = fs.readFileSync(skillFile, "utf8");
+  for (const [token, value] of Object.entries(replacements)) {
+    if (!skill.includes(token)) {
+      fs.rmSync(dest, { recursive: true, force: true });
+      throw new Error(`${name} skill template is missing ${token}`);
+    }
+    skill = skill.replaceAll(token, value);
   }
-  fs.writeFileSync(skillFile, skill.replaceAll(token, fwd(VISION_RUNTIME_CLI)));
+  fs.writeFileSync(skillFile, skill);
   fs.writeFileSync(
-    path.join(dest, VISION_SKILL_MARKER),
-    JSON.stringify(VISION_SKILL_MARKER_DATA, null, 2) + "\n"
+    path.join(dest, SKILL_MARKER),
+    JSON.stringify(markerData, null, 2) + "\n"
   );
   console.log(`  wrote ${dest}`);
+}
+
+function installVisionSkillDir(skillsRoot, { remove, dryRun }) {
+  installManagedSkillDir(skillsRoot, {
+    name: VISION_SKILL_NAME,
+    source: VISION_SKILL_SRC,
+    markerData: VISION_SKILL_MARKER_DATA,
+    replacements: { "{{VISION_CLI_PATH}}": fwd(VISION_RUNTIME_CLI) },
+    remove,
+    dryRun,
+  });
+}
+
+function installUsageSkillDir(skillsRoot, agent, { remove, dryRun }) {
+  installManagedSkillDir(skillsRoot, {
+    name: USAGE_SKILL_NAME,
+    source: USAGE_SKILL_SRC,
+    markerData: USAGE_SKILL_MARKER_DATA,
+    replacements: {
+      "{{USAGE_CLI_PATH}}": fwd(RUNTIME.usageCli),
+      "{{USAGE_AGENT}}": agent,
+    },
+    remove,
+    dryRun,
+  });
 }
 
 const CODEX_VISION_BEGIN = "# >>> agent-tools vision >>>";
@@ -691,7 +713,7 @@ function runClaudeVision(opts) {
     } else {
       console.log(`  no ${VISION_MCP_NAME} MCP entry found; nothing to remove.`);
     }
-    installSkillDir(skillsDir, { remove: true, dryRun: opts.dryRun });
+    installVisionSkillDir(skillsDir, { remove: true, dryRun: opts.dryRun });
     console.log("  - vision");
     return;
   }
@@ -704,12 +726,21 @@ function runClaudeVision(opts) {
   cfg.mcpServers = cfg.mcpServers || {};
   cfg.mcpServers[VISION_MCP_NAME] = { type: "stdio", command: mcp.command, args: mcp.args };
   writeJson(claudeJson, cfg, opts.dryRun);
-  installSkillDir(skillsDir, { remove: false, dryRun: opts.dryRun });
+  installVisionSkillDir(skillsDir, { remove: false, dryRun: opts.dryRun });
   console.log("  + vision (inspect_image MCP + at-vision skill)");
 }
 
 function runClaude(opts) {
   if (wants(opts, "vision")) runClaudeVision(opts);
+  if (wants(opts, "usage")) {
+    const skillsDir = opts.claudeSkillsDir || path.join(os.homedir(), ".claude", "skills");
+    console.log(`claude usage: ${skillsDir}`);
+    installUsageSkillDir(skillsDir, "claude", {
+      remove: opts.uninstall,
+      dryRun: opts.dryRun,
+    });
+    console.log(opts.uninstall ? "  - usage skill" : "  + usage skill (at-usage)");
+  }
   if (!wants(opts, "statusline")) return;
   const settings = opts.settings || path.join(os.homedir(), ".claude", "settings.json");
   console.log(`claude (global): ${settings}`);
@@ -758,7 +789,7 @@ function runCodexVision(opts) {
     dryRun: opts.dryRun,
     mcp: visionMcpCommand(),
   });
-  installSkillDir(skillsDir, { remove: opts.uninstall, dryRun: opts.dryRun });
+  installVisionSkillDir(skillsDir, { remove: opts.uninstall, dryRun: opts.dryRun });
   console.log(opts.uninstall ? "  - vision" : "  + vision (inspect_image MCP + at-vision skill)");
 }
 
@@ -767,6 +798,12 @@ function runCodex(opts) {
   if (!wants(opts, "usage")) {
     return;
   }
+  const skillsDir = opts.codexSkillsDir || path.join(os.homedir(), ".agents", "skills");
+  console.log(`codex usage skill: ${skillsDir}`);
+  installUsageSkillDir(skillsDir, "codex", {
+    remove: opts.uninstall,
+    dryRun: opts.dryRun,
+  });
   const file = opts.codexHooks || path.join(os.homedir(), ".codex", "hooks.json");
   console.log(`codex (global): ${file}`);
   const cfg = readJson(file);
@@ -854,7 +891,7 @@ function runOpencodeVision(opts) {
     dryRun: opts.dryRun,
     mcp: visionMcpCommand(),
   });
-  installSkillDir(skillsDir, { remove: opts.uninstall, dryRun: opts.dryRun });
+  installVisionSkillDir(skillsDir, { remove: opts.uninstall, dryRun: opts.dryRun });
   console.log(opts.uninstall ? "  - vision" : "  + vision (inspect_image MCP + at-vision skill)");
 }
 
@@ -905,10 +942,7 @@ function visionRuntimeHasRemainingReference(opts) {
       const end = text.indexOf(CODEX_VISION_END, start + CODEX_VISION_BEGIN.length);
       if (start !== -1 && end !== -1) {
         const block = text.slice(start, end);
-        if (
-          block.includes(fwd(VISION_RUNTIME_SERVER)) ||
-          block.includes(fwd(VISION_LEGACY_RUNTIME_SERVER))
-        ) {
+        if (block.includes(fwd(VISION_RUNTIME_SERVER))) {
           return true;
         }
       }
@@ -948,7 +982,7 @@ function cleanupVisionRuntimeIfUnused(opts) {
     try {
       fs.rmdirSync(path.dirname(VISION_RATE_LIMIT_STATE));
     } catch {
-      // The shared cache directory may contain state for other capabilities.
+      // The shared cache directory may contain state for other integrations.
     }
   }
   console.log(`  removed unused vision runtime ${VISION_RUNTIME_DIR}`);
@@ -985,7 +1019,7 @@ function main() {
 }
 
 // Standalone vision commands dispatch before capability parsing so image
-// paths and questions are never mistaken for capabilities.
+// paths and questions are never mistaken for integrations.
 const subcommand = process.argv[2];
 if (subcommand === "inspect-image") {
   const { runInspectImageCli } = await import(

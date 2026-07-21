@@ -1,7 +1,7 @@
 {
   "name": "agent-tools",
   "version": "0.1.0",
-  "description": "Skills and runtime integrations for Codex, Claude Code, and opencode",
+  "description": "Reusable Agent Skills, plus runtime integrations for Codex, Claude Code, and opencode",
   "author": {
     "name": "kairyou"
   },

@@ -7,7 +7,7 @@
 //
 // Steps: clean-tree check -> npm auth check -> npm test -> npm version -> npm publish -> git push
 //
-// Release when scripts/ lib/ plugins/ hooks/ statusline/ config.default.jsonc or
+// Release when scripts/ integrations/ config.default.jsonc or
 // package.json deps change — npx users only get these from the published package.
 // (skills/ ships from GitHub via `npx skills add`; no release needed.)
 

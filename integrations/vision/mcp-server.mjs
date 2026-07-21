@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// Vision MCP stdio server. Thin shell over lib/vision: registers the
+// Vision MCP stdio server. Thin shell over ./lib: registers the
 // inspect_image tool, translates results/errors, and nothing else. Launched by
-// hosts as `agent-tools mcp-vision` (or `node plugins/vision/mcp-server.mjs`).
+// hosts as `agent-tools mcp-vision` (or `node integrations/vision/mcp-server.mjs`).
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { createVisionService, QUESTION_LIMITS } from "../../lib/vision/inspect.mjs";
-import { isVisionError } from "../../lib/vision/errors.mjs";
+import { createVisionService, QUESTION_LIMITS } from "./lib/inspect.mjs";
+import { isVisionError } from "./lib/errors.mjs";
 
 // Stable soft constraints live here: this text follows the tool into every
 // session, whether or not the at-vision skill is loaded.

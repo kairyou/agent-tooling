@@ -1,7 +1,7 @@
 {
   "name": "@kairyou/agent-tools",
   "version": "0.2.0",
-  "description": "Skills and runtime integrations for Codex, Claude Code, and opencode.",
+  "description": "Reusable Agent Skills, plus runtime integrations for Codex, Claude Code, and opencode.",
   "license": "MIT",
   "engines": {
     "node": ">=22"
@@ -12,12 +12,9 @@
   "files": [
     "config.default.jsonc",
     "dist/vision/",
-    "hooks/",
-    "lib/",
-    "plugins/",
+    "integrations/",
     "scripts/",
-    "skills/",
-    "statusline/"
+    "skills/"
   ],
   "dependencies": {
     "jsonc-parser": "3.3.1"
