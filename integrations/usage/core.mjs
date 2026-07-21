@@ -8,9 +8,10 @@
 // routes) and is bundled into dist/usage/core.mjs at build time.
 
 import { pathToFileURL } from "node:url";
-import { debugLog, usagePreset } from "./lib/config.mjs";
+import { debugLog, usagePreset, snapshotTtlMs } from "./lib/config.mjs";
 import { isOfficialBaseUrl } from "./lib/urls.mjs";
 import {
+  readUsageSnapshot,
   rememberUsageRoute,
   rememberUsageSnapshot,
   rememberRefreshState,
@@ -113,11 +114,14 @@ async function refresh(agent = "codex") {
   return await queryAgentProviderUsage(agent);
 }
 
-export async function queryAgentProviderUsage(agent = "codex") {
-  return await queryUsageContext(await usageContext(agent), {
-    agent,
-    rememberSnapshot: agent === "claude",
-  });
+export async function queryAgentProviderUsage(agent = "codex", { maxAgeMs = 0 } = {}) {
+  const context = await usageContext(agent);
+  if (maxAgeMs > 0) {
+    const cached = await readUsageSnapshot(context);
+    const age = cached?.updatedAt ? Date.now() - Date.parse(cached.updatedAt) : Infinity;
+    if (cached?.text && age < maxAgeMs) return { ...cached, cached: true };
+  }
+  return await queryUsageContext(context, { agent, rememberSnapshot: true });
 }
 
 async function main() {
@@ -128,7 +132,8 @@ async function main() {
       const result = await refresh(cli.agent);
       textOut(result?.text || "");
     } else if (mode === "hook") {
-      const result = await refresh(cli.agent);
+      // Hook mode fires on every prompt; serve a fresh snapshot when possible.
+      const result = await queryAgentProviderUsage(cli.agent, { maxAgeMs: snapshotTtlMs() });
       hookOut(result?.text || "");
     } else {
       throw new Error(`unknown mode: ${mode}`);

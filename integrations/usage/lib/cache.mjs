@@ -61,6 +61,11 @@ async function readSnapshotCache() {
   }
 }
 
+export async function readUsageSnapshot(context) {
+  const cache = await readSnapshotCache();
+  return cache.items[usageRouteCacheKey(context.baseUrl)] || null;
+}
+
 export async function rememberUsageSnapshot(context, result) {
   if (!result?.text) return;
   try {

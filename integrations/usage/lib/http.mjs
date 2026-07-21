@@ -125,7 +125,8 @@ function mergeSetCookiePairs(cookieHeader, setCookieHeaders) {
   return merged;
 }
 
-export async function requestJson(url, key, options = {}) {
+export async function requestJson(url, options = {}) {
+  const { key = "", headers = {}, name = "usage" } = options;
   let cookieHeader = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
@@ -133,10 +134,10 @@ export async function requestJson(url, key, options = {}) {
     const response = await fetch(url, {
       headers: {
         accept: "application/json",
-        authorization: `Bearer ${options.authKey || key}`,
+        ...(key ? { authorization: `Bearer ${key}` } : {}),
         "user-agent": SHIELD_USER_AGENT,
         ...(cookieHeader ? { cookie: cookieHeader } : {}),
-        ...(options.headers || {}),
+        ...headers,
       },
       signal: controller.signal,
     });
@@ -151,7 +152,7 @@ export async function requestJson(url, key, options = {}) {
         const contentType = response.headers.get("content-type") || "";
         const acwScV2 = isShieldChallenge(contentType, body) ? solveNewApiAcwScV2(body) : "";
         await debugLog({
-          source: options.name || "usage",
+          source: name,
           url,
           status: response.status,
           contentType,
@@ -162,19 +163,19 @@ export async function requestJson(url, key, options = {}) {
           cookieHeader = upsertCookie(cookieHeader, "acw_sc__v2", acwScV2);
           continue;
         }
-        throw new Error(`${options.name || "usage"} returned non-JSON (${response.status})`);
+        throw new Error(`${name} returned non-JSON (${response.status})`);
       }
 
       if (!response.ok) {
         const message = json?.error?.message || json?.message || response.statusText;
         await debugLog({
-          source: options.name || "usage",
+          source: name,
           url,
           status: response.status,
           message,
           bodyPreview: shortPreview(body),
         });
-        throw new Error(`${options.name || "usage"} failed (${response.status} ${message})`);
+        throw new Error(`${name} failed (${response.status} ${message})`);
       }
 
       return json;
@@ -182,5 +183,5 @@ export async function requestJson(url, key, options = {}) {
       clearTimeout(timeout);
     }
   }
-  throw new Error(`${options.name || "usage"} unavailable`);
+  throw new Error(`${name} unavailable`);
 }

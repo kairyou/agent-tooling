@@ -138,6 +138,52 @@ provider 的 `base_url` 和密钥; Claude Code: 读取 `ANTHROPIC_BASE_URL` 与
 }
 ```
 
+#### 自定义网关路由
+
+内置探测覆盖不到的网关(比如 cookie 认证的中转), 可以自己写路由模块并在
+`providerUsage.routes` 里声明(相对 `~/.agent-tools` 解析). 声明的路由优先
+探测; `"preset"` 填路由 id 可直接选中.
+
+```jsonc
+{
+  "providerUsage": {
+    "routes": [
+      "custom/my-gateway.mjs",
+      "custom/another-gateway.mjs"
+    ],
+    "myGateway": { "username": "me", "password": "..." }
+  }
+}
+```
+
+```js
+// ~/.agent-tools/custom/my-gateway.mjs
+export const meta = { id: "my-gateway" }; // 可选; id 缺省用文件名
+
+export async function run(context, { requestJson, agentConfig }) {
+  // context: { baseUrl, key, providerName, provider, label }
+  const { myGateway = {} } = await agentConfig(); // providerUsage 对象, 自定义键随意加
+
+  // 建议: 把 token 存到文件里(如 ~/.agent-tools/cache 下)重复使用,
+  // 用它查询失败(如 401)时才重新登录, 并把新 token 写回文件.
+  const login = await fetch(`${context.baseUrl}/api/user/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: myGateway.username, password: myGateway.password }),
+  });
+  const session = await login.json();
+
+  // 用 fetch 也行; 自定义 header: authorization, cookie 等.
+  const me = await requestJson(`${context.baseUrl}/api/user/self`, {
+    headers: { authorization: `Bearer ${session?.data?.accessToken}` },
+  });
+  return { text: `API | balance ¥${me?.data?.balance}` };
+}
+```
+
+`text` 是自由字符串; 成功返回 `{ text }`, 抛错则回落到下一条路由
+(开启 `providerUsage.debug` 后, 失败会记录到 `~/.agent-tools/logs/usage-debug.log`).
+
 显示效果示例:
 
 ```text

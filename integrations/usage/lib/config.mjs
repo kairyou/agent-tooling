@@ -92,6 +92,14 @@ export async function panelUserHeaders() {
   };
 }
 
+// Passive callers (the codex hook fires per prompt; several sessions may run
+// at once) reuse a fresh snapshot instead of hitting the gateway every time.
+// Same knob the statusline uses; 0 disables.
+export function snapshotTtlMs() {
+  const raw = Number(process.env.AGENT_TOOLS_USAGE_SNAPSHOT_TTL_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 60_000;
+}
+
 export async function newApiQuotaScale() {
   const config = await agentConfig();
   const scale = Number(config.newApiQuotaScale || DEFAULT_NEW_API_QUOTA_SCALE);

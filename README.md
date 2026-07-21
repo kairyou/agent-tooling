@@ -148,6 +148,55 @@ endpoint and key — and tune `providerUsage` in `~/.agent-tools/config.jsonc`:
 }
 ```
 
+#### Custom gateway routes
+
+For gateways the built-in probes cannot reach (e.g. cookie-authenticated
+relays), write your own route module and declare it in `providerUsage.routes`
+(paths resolve against `~/.agent-tools`). Declared routes are probed first;
+setting `"preset"` to a route id selects it directly.
+
+```jsonc
+{
+  "providerUsage": {
+    "routes": [
+      "custom/my-gateway.mjs",
+      "custom/another-gateway.mjs"
+    ],
+    "myGateway": { "username": "me", "password": "..." }
+  }
+}
+```
+
+```js
+// ~/.agent-tools/custom/my-gateway.mjs
+export const meta = { id: "my-gateway" }; // optional; id defaults to the file name
+
+export async function run(context, { requestJson, agentConfig }) {
+  // context: { baseUrl, key, providerName, provider, label }
+  const { myGateway = {} } = await agentConfig(); // the providerUsage object; custom keys welcome
+
+  // Tip: save the token to a file (e.g. under ~/.agent-tools/cache) and reuse
+  // it; log in again only when a query fails with it (e.g. 401), then save the
+  // new token.
+  const login = await fetch(`${context.baseUrl}/api/user/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: myGateway.username, password: myGateway.password }),
+  });
+  const session = await login.json();
+
+  // Plain fetch works too; custom headers: authorization, cookie, ...
+  const me = await requestJson(`${context.baseUrl}/api/user/self`, {
+    headers: { authorization: `Bearer ${session?.data?.accessToken}` },
+  });
+  return { text: `API | balance ¥${me?.data?.balance}` };
+}
+```
+
+`text` is a free-form string; return `{ text }` on success, throw to fall
+through to the next route (with `providerUsage.debug` enabled, failures are
+logged to `~/.agent-tools/logs/usage-debug.log`).
+
 Output examples:
 
 ```text

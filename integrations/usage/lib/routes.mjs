@@ -1,7 +1,11 @@
 // Known gateway usage endpoints and the probing order for a given context.
 
+import { basename, extname, isAbsolute, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { requestJson } from "./http.mjs";
 import {
+  AGENT_TOOLS_HOME,
+  agentConfig,
   usagePreset,
   panelUserHeaders,
   newApiQuotaScale,
@@ -50,7 +54,8 @@ function usageResult(context, source, text, raw) {
 // OpenAI-style endpoint at /v1/usage. This is intentionally probed first for
 // generic non-OpenAI base URLs because it does not require a management token.
 async function fetchV1Usage(context) {
-  const json = await requestJson(await subscriptionUrl(context.baseUrl), context.key, {
+  const json = await requestJson(await subscriptionUrl(context.baseUrl), {
+    key: context.key,
     name: "v1 usage",
   });
   if (!hasV1UsageFields(usageRoot(json))) throw new Error("v1 usage payload has no usage fields");
@@ -61,7 +66,8 @@ async function fetchV1Usage(context) {
 // query token usage from the service root rather than the /v1 OpenAI-compatible
 // path.
 async function fetchNewApiTokenUsage(context) {
-  const json = await requestJson(joinUrl(serviceRoot(context.baseUrl), "/api/usage/token/"), context.key, {
+  const json = await requestJson(joinUrl(serviceRoot(context.baseUrl), "/api/usage/token/"), {
+    key: context.key,
     name: "NewAPI token usage",
   });
   const root = usageRoot(json);
@@ -95,7 +101,8 @@ async function fetchNewApiTokenUsage(context) {
 async function fetchPanelUserSelfUsage(context) {
   const preset = await usagePreset();
   const kind = preset === "auto" ? "new-api" : preset;
-  const json = await requestJson(joinUrl(serviceRoot(context.baseUrl), "/api/user/self"), context.key, {
+  const json = await requestJson(joinUrl(serviceRoot(context.baseUrl), "/api/user/self"), {
+    key: context.key,
     name: "panel /api/user/self",
     headers: await panelUserHeaders(),
   });
@@ -140,7 +147,8 @@ async function fetchPanelUserSelfUsage(context) {
 // also expose richer subscription summaries through /v1/usage, so this route is
 // a fallback for deployments where /v1/usage is unavailable.
 async function fetchSub2ApiAuthMeUsage(context) {
-  const json = await requestJson(joinUrl(serviceRoot(context.baseUrl), "/api/v1/auth/me"), context.key, {
+  const json = await requestJson(joinUrl(serviceRoot(context.baseUrl), "/api/v1/auth/me"), {
+    key: context.key,
     name: "Sub2API auth/me",
   });
   const root = usageRoot(json);
@@ -176,7 +184,7 @@ async function fetchOpenRouterUsage(context) {
   let lastError;
   for (const endpoint of endpoints) {
     try {
-      const json = await requestJson(endpoint.url, context.key, { name: endpoint.source });
+      const json = await requestJson(endpoint.url, { key: context.key, name: endpoint.source });
       return usageResult(context, endpoint.source, formatOpenRouterLine("OpenRouter", json), json);
     } catch (error) {
       lastError = error;
@@ -214,6 +222,63 @@ const USAGE_ROUTES = {
   },
 };
 
+// User-authored gateway routes, declared in config.jsonc:
+//   "providerUsage": { "routes": ["custom/anyrouter.mjs"] }
+// Paths resolve against ~/.agent-tools. Each module exports
+// `export async function run(context, helpers)` plus an optional
+// `export const meta = { id }` (id defaults to the file name). Broken modules
+// are logged and skipped so a bad custom route cannot break the built-ins.
+const CUSTOM_ROUTE_HELPERS = { requestJson, agentConfig };
+
+let customRoutesPromise;
+function customRoutes() {
+  customRoutesPromise ||= loadCustomRoutes();
+  return customRoutesPromise;
+}
+
+async function loadCustomRoutes() {
+  const config = await agentConfig();
+  const specs = Array.isArray(config.routes) ? config.routes : [];
+  const routes = [];
+  for (const spec of specs) {
+    if (typeof spec !== "string" || !spec.trim()) continue;
+    const file = isAbsolute(spec) ? spec : join(AGENT_TOOLS_HOME, spec);
+    try {
+      const mod = await import(pathToFileURL(file).href);
+      if (typeof mod.run !== "function") {
+        throw new Error("missing `export async function run(context, helpers)`");
+      }
+      const id = String(mod.meta?.id || basename(file, extname(file)));
+      routes.push({
+        id,
+        path: spec,
+        run: async (context) => {
+          const result = await mod.run(context, CUSTOM_ROUTE_HELPERS);
+          if (typeof result?.text !== "string" || !result.text) {
+            throw new Error(`custom route ${id} returned no text`);
+          }
+          return {
+            updatedAt: new Date().toISOString(),
+            baseUrl: context.baseUrl,
+            provider: context.providerName,
+            source: id,
+            ...result,
+          };
+        },
+      });
+    } catch (error) {
+      await debugLog({ source: "custom-route", file, error: error.message });
+    }
+  }
+  return routes;
+}
+
+async function routeRegistry() {
+  const registry = { ...USAGE_ROUTES };
+  for (const route of await customRoutes()) registry[route.id] = route;
+  return registry;
+}
+
 // Presets are probe-order aliases over the routes above, not separate
 // protocols (e.g. anyrouter/agentrouter just try the NewAPI panel endpoints
 // and /v1/usage in a different order).
@@ -237,29 +302,36 @@ async function usageRouteIds(context) {
   };
   if (routes[preset]) return routes[preset];
 
-  if (preset !== "auto") return [];
-  if (hostIncludes(context.baseUrl, "openrouter.ai")) return ["openrouter"];
-  return ["v1-usage", "sub2api-auth-me", "newapi-token", "panel-user-self"];
+  // A preset naming a registered route id (built-in or custom) selects it.
+  if (preset !== "auto") return (await routeRegistry())[preset] ? [preset] : [];
+
+  // Declared custom routes probe first, in config order.
+  const customIds = (await customRoutes()).map((route) => route.id);
+  const builtinIds = hostIncludes(context.baseUrl, "openrouter.ai")
+    ? ["openrouter"]
+    : ["v1-usage", "sub2api-auth-me", "newapi-token", "panel-user-self"];
+  return [...new Set([...customIds, ...builtinIds])];
 }
 
-async function cachedUsageRoute(context) {
+async function cachedUsageRoute(context, registry) {
   const cache = await readRouteCache();
   const key = usageRouteCacheKey(context.baseUrl);
   const route = cache.routes[key];
-  return route?.route && USAGE_ROUTES[route.route] ? route : null;
+  return route?.route && registry[route.route] ? route : null;
 }
 
 export async function orderedUsageRoutes(context) {
+  const registry = await routeRegistry();
   const routeIds = await usageRouteIds(context);
-  const cached = await cachedUsageRoute(context);
-  if (!cached || !routeIds.includes(cached.route)) return routeIds.map((id) => USAGE_ROUTES[id]).filter(Boolean);
+  const cached = await cachedUsageRoute(context, registry);
+  if (!cached || !routeIds.includes(cached.route)) return routeIds.map((id) => registry[id]).filter(Boolean);
   await debugLog({
     source: "route-cache",
     key: usageRouteCacheKey(context.baseUrl),
     route: cached.route,
-    path: cached.path || USAGE_ROUTES[cached.route]?.path || "",
+    path: cached.path || registry[cached.route]?.path || "",
   });
   return [cached.route, ...routeIds.filter((id) => id !== cached.route)]
-    .map((id) => USAGE_ROUTES[id])
+    .map((id) => registry[id])
     .filter(Boolean);
 }

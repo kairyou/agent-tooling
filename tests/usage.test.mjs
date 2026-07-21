@@ -23,7 +23,7 @@ async function withServer(handler, fn) {
   }
 }
 
-async function runProvider({ baseUrl, preset = "auto", config = {}, codexHome, agentHome }) {
+async function runProvider({ baseUrl, preset = "auto", config = {}, codexHome, agentHome, env = {} }) {
   const temp = codexHome && agentHome ? "" : mkdtempSync(join(tmpdir(), "agent-tools-provider-"));
   codexHome ||= join(temp, "codex");
   agentHome ||= join(temp, "agent");
@@ -51,6 +51,9 @@ async function runProvider({ baseUrl, preset = "auto", config = {}, codexHome, a
         PROVIDER_USAGE_BASE_URL: "",
         SUB2API_BASE_URL: "",
         OPENAI_BASE_URL: "",
+        // Snapshot reuse is covered by its own test; keep the rest live.
+        AGENT_TOOLS_USAGE_SNAPSHOT_TTL_MS: "0",
+        ...env,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -188,6 +191,65 @@ test("anyrouter preset parses a New API-shaped panel response", async () => {
   });
 });
 
+test("custom routes from config.jsonc probe first and are preset-selectable", async () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tools-custom-route-"));
+  const codexHome = join(temp, "codex");
+  const agentHome = join(temp, "agent");
+  mkdirSync(join(agentHome, "custom"), { recursive: true });
+  writeFileSync(
+    join(agentHome, "custom", "my-gateway.mjs"),
+    'export const meta = { id: "my-gateway" };\n' +
+      "export async function run(context, { requestJson, agentConfig }) {\n" +
+      '  if (typeof requestJson !== "function") throw new Error("helpers missing");\n' +
+      "  const config = await agentConfig();\n" +
+      '  if (!Array.isArray(config.routes)) throw new Error("agentConfig missing");\n' +
+      "  return { text: `API | custom $1 ${context.label}` };\n" +
+      "}\n"
+  );
+  const config = { routes: ["custom/my-gateway.mjs"] };
+
+  // Auto mode: the declared route wins before any built-in probe (the base URL
+  // points at a closed port, so a network probe would fail loudly).
+  const auto = await runProvider({ baseUrl: "http://127.0.0.1:9/v1", config, codexHome, agentHome });
+  assert.equal(auto.systemMessage, "API | custom $1 MOCK");
+
+  const byPreset = await runProvider({
+    baseUrl: "http://127.0.0.1:9/v1",
+    preset: "my-gateway",
+    config,
+    codexHome,
+    agentHome,
+  });
+  assert.equal(byPreset.systemMessage, "API | custom $1 MOCK");
+});
+
+test("a broken custom route is skipped and built-ins still answer", async () => {
+  await withServer((req, res) => {
+    if (req.url === "/api/v1/auth/me") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ code: 0, data: { balance: 5 } }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  }, async (base) => {
+    const temp = mkdtempSync(join(tmpdir(), "agent-tools-broken-route-"));
+    const codexHome = join(temp, "codex");
+    const agentHome = join(temp, "agent");
+    mkdirSync(join(agentHome, "custom"), { recursive: true });
+    writeFileSync(join(agentHome, "custom", "broken.mjs"), "export const nothing = 1;\n");
+
+    const payload = await runProvider({
+      baseUrl: `${base}/v1`,
+      preset: "sub2api",
+      config: { routes: ["custom/broken.mjs"] },
+      codexHome,
+      agentHome,
+    });
+    assert.equal(payload.systemMessage, "API | balance $5.0");
+  });
+});
+
 test("provider usage reads Veloera panel balance with Veloera scale", async () => {
   await withServer((req, res) => {
     if (req.url === "/api/user/self") {
@@ -248,6 +310,33 @@ test("provider usage caches the successful route for a service root", async () =
     const cache = JSON.parse(readFileSync(join(agentHome, "cache", "usage-routes.json"), "utf8"));
     assert.equal(cache.routes[base].route, "sub2api-auth-me");
     assert.equal(cache.routes[base].path, "/api/v1/auth/me");
+  });
+});
+
+test("hook mode reuses a fresh snapshot instead of re-querying", async () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tools-provider-ttl-"));
+  const codexHome = join(temp, "codex");
+  const agentHome = join(temp, "agent");
+  const seen = [];
+
+  await withServer((req, res) => {
+    seen.push(req.url);
+    if (req.url === "/api/v1/auth/me") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ code: 0, data: { balance: 42 } }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  }, async (base) => {
+    const ttl = { env: { AGENT_TOOLS_USAGE_SNAPSHOT_TTL_MS: "60000" } };
+    const first = await runProvider({ baseUrl: `${base}/v1`, preset: "sub2api", codexHome, agentHome, ...ttl });
+    const second = await runProvider({ baseUrl: `${base}/v1`, preset: "sub2api", codexHome, agentHome, ...ttl });
+    assert.equal(first.systemMessage, "API | balance $42.0");
+    assert.equal(second.systemMessage, "API | balance $42.0");
+    // The second hook call is served from the snapshot: the first call probes
+    // the preset's two routes, the second adds no network requests at all.
+    assert.deepEqual(seen, ["/v1/usage?days=30", "/api/v1/auth/me"]);
   });
 });
 
