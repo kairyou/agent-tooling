@@ -149,6 +149,19 @@ Keep `preset` set to `auto` for automatic detection. Select a specific protocol
 only when you know which usage endpoint the gateway exposes; a configured
 custom route id is also accepted.
 
+Output examples:
+
+```text
+# Relay plan quota.
+API | D $0.0/$100 | W $0.0/$300 | Exp 07-08
+
+# Wallet balance.
+API | balance $362 | today $61.7 | 30d $566
+```
+
+Fields: `D/W/M` are daily/weekly/monthly spend against plan limits; `Exp` is
+the plan expiry; `balance` is wallet credit; `today` and `30d` are API spend.
+
 #### Custom gateway routes
 
 For gateways the built-in probes cannot reach (e.g. cookie-authenticated
@@ -197,19 +210,6 @@ export async function run(context, { requestJson, agentConfig }) {
 `text` is a free-form string; return `{ text }` on success, throw to fall
 through to the next route (with `providerUsage.debug` enabled, failures are
 logged to `~/.agent-tools/logs/usage-debug.log`).
-
-Output examples:
-
-```text
-# Relay plan quota.
-API | D $0.0/$100 | W $0.0/$300 | Exp 07-08
-
-# Wallet balance.
-API | balance $362 | today $61.7 | 30d $566
-```
-
-Fields: `D/W/M` are daily/weekly/monthly spend against plan limits; `Exp` is
-the plan expiry; `balance` is wallet credit; `today` and `30d` are API spend.
 
 ### Vision (cross-model image understanding)
 

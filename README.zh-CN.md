@@ -138,6 +138,19 @@ provider 的 `base_url` 和密钥; Claude Code: 读取 `ANTHROPIC_BASE_URL` 与
 保持 `preset: "auto"` 即可自动探测. 只有明确知道网关开放的是哪种用量协议时,
 才指定相应的内置 preset 或已配置的自定义 route id.
 
+显示效果示例:
+
+```text
+# 中转套餐额度.
+API | D $0.0/$100 | W $0.0/$300 | Exp 07-08
+
+# 钱包余额.
+API | balance $362 | today $61.7 | 30d $566
+```
+
+字段含义: `D/W/M` 是日/周/月套餐消耗与上限, `Exp` 是套餐到期日,
+`balance` 是钱包余额, `today` / `30d` 是今日与近 30 天 API 消耗.
+
 #### 自定义网关路由
 
 内置探测覆盖不到的网关(比如 cookie 认证的中转), 可以自己写路由模块并在
@@ -183,19 +196,6 @@ export async function run(context, { requestJson, agentConfig }) {
 
 `text` 是自由字符串; 成功返回 `{ text }`, 抛错则回落到下一条路由
 (开启 `providerUsage.debug` 后, 失败会记录到 `~/.agent-tools/logs/usage-debug.log`).
-
-显示效果示例:
-
-```text
-# 中转套餐额度.
-API | D $0.0/$100 | W $0.0/$300 | Exp 07-08
-
-# 钱包余额.
-API | balance $362 | today $61.7 | 30d $566
-```
-
-字段含义: `D/W/M` 是日/周/月套餐消耗与上限, `Exp` 是套餐到期日,
-`balance` 是钱包余额, `today` / `30d` 是今日与近 30 天 API 消耗.
 
 ### Vision(跨模型识图)
 
