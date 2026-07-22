@@ -72,7 +72,8 @@ npx -y @kairyou/agent-tools@latest <capability> -a <agent...>
 ```
 
 `--dry-run` 预览, `--uninstall` 解除对应集成, 重新执行安装命令即为更新.
-安装器只改动自己写入的配置项; 卸载会保留 `~/.agent-tools` 下的共享文件.
+安装器只改动自己写入的配置项, 更新 `config.jsonc` 时只补充缺失的默认键,
+不会动你的修改和注释.
 
 | Capability | Claude Code | Codex | OpenCode |
 | --- | --- | --- | --- |
@@ -86,9 +87,10 @@ npx -y @kairyou/agent-tools@latest <capability> -a <agent...>
 npx -y @kairyou/agent-tools@latest statusline -a claude
 ```
 
-安装器会把 `statusLine` 写入 `~/.claude/settings.json`. 默认显示:
+安装器会把 `statusLine` 写入 `~/.claude/settings.json`. 输出示例:
 
 ```text
+# 显示项与顺序由 ~/.agent-tools/config.jsonc 的 statusline.fields 控制:
 ⎇ main | Opus 4.8 | 5h 7% ⟳2h54m | w 41% ⟳3d1h
 
 # 使用兼容的 API 中转时, 显示中转的额度信息, 比如:
@@ -97,9 +99,6 @@ npx -y @kairyou/agent-tools@latest statusline -a claude
 
 其中 `5h` / `w` 是 Claude 的滚动用量窗口, `⟳` 后面是重置倒计时;
 中转额度信息的兼容性与配置见下方 [Provider usage](#provider-usage).
-
-如需控制显示项, 修改 `~/.agent-tools/config.jsonc` 里的
-`statusline.fields`. 安装器更新时只会补充缺失的默认键, 不会动你的修改和注释.
 
 ### Provider usage
 

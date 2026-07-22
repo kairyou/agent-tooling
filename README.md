@@ -75,8 +75,8 @@ npx -y @kairyou/agent-tools@latest <capability> -a <agent...>
 
 `--dry-run` previews, `--uninstall` unwires the integration from the agent, and
 re-running the install command updates. The installer only touches config
-entries it wrote itself; shared files under `~/.agent-tools` are kept on
-uninstall.
+entries it wrote itself, and `config.jsonc` updates only add missing default
+keys without touching your edits or comments.
 
 | Capability | Claude Code | Codex | OpenCode |
 | --- | --- | --- | --- |
@@ -90,10 +90,10 @@ uninstall.
 npx -y @kairyou/agent-tools@latest statusline -a claude
 ```
 
-The installer writes `statusLine` to `~/.claude/settings.json`. The default
-output is:
+The installer writes `statusLine` to `~/.claude/settings.json`. Example output:
 
 ```text
+# Pick and order the fields via statusline.fields in ~/.agent-tools/config.jsonc:
 ⎇ main | Opus 4.8 | 5h 7% ⟳2h54m | w 41% ⟳3d1h
 
 # With a compatible API relay, its quota info is shown instead, e.g.:
@@ -103,10 +103,6 @@ output is:
 Here `5h` and `w` are Claude's rolling usage windows and `⟳` is the reset
 countdown; see [Provider usage](#provider-usage) below for relay quota
 compatibility and configuration.
-
-To choose what appears, edit `statusline.fields` in
-`~/.agent-tools/config.jsonc`. Installer updates only add missing default keys
-and never touch your edits or comments.
 
 ### Provider usage
 
