@@ -14,7 +14,6 @@ const INSTALL_SCRIPT = join(ROOT, "scripts", "install.mjs");
 // Every run gets an isolated AGENT_TOOLS_HOME so tests never write into the
 // real ~/.agent-tools; deps installation is skipped (covered by real installs).
 const FALLBACK_HOME = mkdtempSync(join(tmpdir(), "at-vision-install-home-"));
-const SKILL_MARKER = ".agent-tools-managed.json";
 
 function runInstall(args, env = {}) {
   const result = spawnSync(process.execPath, [INSTALL_SCRIPT, ...args], {
@@ -66,7 +65,9 @@ test("claude vision install/uninstall manages ~/.claude.json, the runtime, and t
     readFileSync(join(skillsDir, "at-vision", "SKILL.md"), "utf8"),
     /callable MCP tool, not an MCP resource/
   );
-  assert.ok(existsSync(join(skillsDir, "at-vision", SKILL_MARKER)));
+  assert.ok(!existsSync(join(skillsDir, "at-vision", ".agent-tools-managed.json")));
+  const installState = JSON.parse(readFileSync(join(home, "install-state.json"), "utf8"));
+  assert.equal(Object.values(installState.artifacts)[0].capability, "vision");
   // Runtime copied into AGENT_TOOLS_HOME with a deps manifest.
   assert.ok(existsSync(join(home, "dist", "vision", "mcp-server.mjs")));
   assert.ok(existsSync(join(home, "dist", "vision", "cli.mjs")));

@@ -45,6 +45,7 @@
 //   -h, --help                Show this help.
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -93,6 +94,7 @@ const USAGE_SKILL_NAME = "at-usage";
 const USAGE_SKILL_SRC = path.join(REPO_ROOT, "integrations", "usage", "skills", USAGE_SKILL_NAME);
 const VISION_BUNDLED_MCP_SERVER = path.join(REPO_ROOT, "dist", "vision", "mcp-server.mjs");
 const VISION_BUNDLED_CLI = path.join(REPO_ROOT, "dist", "vision", "cli.mjs");
+const INSTALL_STATE_PATH = path.join(INSTALL_ROOT, "install-state.json");
 
 function fwd(p) {
   return p.replace(/\\/g, "/");
@@ -445,13 +447,12 @@ const VISION_RATE_LIMIT_STATE = path.join(INSTALL_ROOT, "cache", "vision-rate-li
 const VISION_DIST_DIR = path.join(REPO_ROOT, "dist", "vision");
 const VISION_RUNTIME_SERVER = path.join(VISION_RUNTIME_DIR, "mcp-server.mjs");
 const VISION_RUNTIME_CLI = path.join(VISION_RUNTIME_DIR, "cli.mjs");
-const SKILL_MARKER = ".agent-tools-managed.json";
-const VISION_SKILL_MARKER_DATA = Object.freeze({
+const VISION_SKILL_IDENTITY = Object.freeze({
   owner: "@kairyou/agent-tools",
   capability: "vision",
   artifact: "skill",
 });
-const USAGE_SKILL_MARKER_DATA = Object.freeze({
+const USAGE_SKILL_IDENTITY = Object.freeze({
   owner: "@kairyou/agent-tools",
   capability: "usage",
   artifact: "skill",
@@ -558,26 +559,110 @@ function installVisionRuntime(opts) {
   }
 }
 
-function isManagedSkillDir(dest, markerData) {
-  const marker = path.join(dest, SKILL_MARKER);
-  if (!fs.existsSync(marker)) return false;
-  try {
-    const value = JSON.parse(fs.readFileSync(marker, "utf8"));
-    return Object.entries(markerData).every(([key, expected]) => value?.[key] === expected);
-  } catch {
-    return false;
+function skillManifestKey(dest) {
+  const resolved = fwd(path.resolve(dest));
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function skillHash(skillFile) {
+  if (!fs.existsSync(skillFile)) return "";
+  return createHash("sha256").update(fs.readFileSync(skillFile)).digest("hex");
+}
+
+function matchesIdentity(value, identity) {
+  return Object.entries(identity).every(([key, expected]) => value?.[key] === expected);
+}
+
+function readInstallState() {
+  const value = readJson(INSTALL_STATE_PATH);
+  if (Object.keys(value).length === 0) return { version: 1, artifacts: {} };
+  if (
+    value.version !== 1 ||
+    !value.artifacts ||
+    typeof value.artifacts !== "object" ||
+    Array.isArray(value.artifacts)
+  ) {
+    throw new Error(`Cannot parse ${INSTALL_STATE_PATH}: unsupported install state schema`);
   }
+  return value;
+}
+
+function writeInstallState(state) {
+  if (Object.keys(state.artifacts).length === 0) {
+    fs.rmSync(INSTALL_STATE_PATH, { force: true });
+    return;
+  }
+  const text = JSON.stringify(state, null, 2) + "\n";
+  const suffix = `${process.pid}-${Date.now()}`;
+  const stage = `${INSTALL_STATE_PATH}.stage-${suffix}`;
+  const backup = `${INSTALL_STATE_PATH}.backup-${suffix}`;
+  let movedCurrent = false;
+  fs.mkdirSync(path.dirname(INSTALL_STATE_PATH), { recursive: true });
+  try {
+    fs.writeFileSync(stage, text);
+    if (fs.existsSync(INSTALL_STATE_PATH)) {
+      fs.renameSync(INSTALL_STATE_PATH, backup);
+      movedCurrent = true;
+    }
+    fs.renameSync(stage, INSTALL_STATE_PATH);
+    fs.rmSync(backup, { force: true });
+  } catch (error) {
+    fs.rmSync(stage, { force: true });
+    if (movedCurrent && !fs.existsSync(INSTALL_STATE_PATH) && fs.existsSync(backup)) {
+      fs.renameSync(backup, INSTALL_STATE_PATH);
+    }
+    throw error;
+  } finally {
+    fs.rmSync(stage, { force: true });
+    if (fs.existsSync(INSTALL_STATE_PATH)) fs.rmSync(backup, { force: true });
+  }
+  console.log(`  wrote ${INSTALL_STATE_PATH}`);
+}
+
+function managedSkillStatus(dest, identity) {
+  const entry = readInstallState().artifacts[skillManifestKey(dest)];
+  if (entry) {
+    if (!matchesIdentity(entry, identity)) return "other";
+    const currentHash = skillHash(path.join(dest, "SKILL.md"));
+    return currentHash && currentHash === entry.sha256 ? "managed" : "modified";
+  }
+  return "unmanaged";
+}
+
+function recordManagedSkill(dest, identity) {
+  const state = readInstallState();
+  state.artifacts[skillManifestKey(dest)] = {
+    path: fwd(path.resolve(dest)),
+    ...identity,
+    sha256: skillHash(path.join(dest, "SKILL.md")),
+  };
+  writeInstallState(state);
+}
+
+function forgetManagedSkill(dest) {
+  const state = readInstallState();
+  if (!state.artifacts[skillManifestKey(dest)]) return;
+  delete state.artifacts[skillManifestKey(dest)];
+  writeInstallState(state);
 }
 
 function installManagedSkillDir(
   skillsRoot,
-  { name, source, markerData, replacements, remove, dryRun }
+  { name, source, identity, replacements, remove, dryRun }
 ) {
   const dest = path.join(skillsRoot, name);
-  const isManaged = () => isManagedSkillDir(dest, markerData);
+  const status = fs.existsSync(dest) ? managedSkillStatus(dest, identity) : "missing";
   if (remove) {
-    if (!fs.existsSync(dest)) return;
-    if (!isManaged()) {
+    if (!fs.existsSync(dest)) {
+      if (!dryRun) forgetManagedSkill(dest);
+      return;
+    }
+    if (status === "modified") {
+      if (!dryRun) forgetManagedSkill(dest);
+      console.log(`  kept modified skill and released ownership ${dest}`);
+      return;
+    }
+    if (status !== "managed") {
       console.log(`  kept unmanaged ${dest}`);
       return;
     }
@@ -586,10 +671,18 @@ function installManagedSkillDir(
       return;
     }
     fs.rmSync(dest, { recursive: true, force: true });
+    forgetManagedSkill(dest);
     console.log(`  removed ${dest}`);
     return;
   }
-  if (fs.existsSync(dest) && !isManaged()) {
+  if (status === "modified") {
+    console.error(
+      `  Refusing to overwrite modified managed skill directory ${dest}. ` +
+        `Move or restore it, then re-run the install.`
+    );
+    process.exit(1);
+  }
+  if (fs.existsSync(dest) && status !== "managed") {
     console.error(
       `  Refusing to overwrite existing unowned skill directory ${dest}. ` +
         `Move or remove it, then re-run the install.`
@@ -612,10 +705,7 @@ function installManagedSkillDir(
     skill = skill.replaceAll(token, value);
   }
   fs.writeFileSync(skillFile, skill);
-  fs.writeFileSync(
-    path.join(dest, SKILL_MARKER),
-    JSON.stringify(markerData, null, 2) + "\n"
-  );
+  recordManagedSkill(dest, identity);
   console.log(`  wrote ${dest}`);
 }
 
@@ -623,7 +713,7 @@ function installVisionSkillDir(skillsRoot, { remove, dryRun }) {
   installManagedSkillDir(skillsRoot, {
     name: VISION_SKILL_NAME,
     source: VISION_SKILL_SRC,
-    markerData: VISION_SKILL_MARKER_DATA,
+    identity: VISION_SKILL_IDENTITY,
     replacements: { "{{VISION_CLI_PATH}}": fwd(VISION_RUNTIME_CLI) },
     remove,
     dryRun,
@@ -634,7 +724,7 @@ function installUsageSkillDir(skillsRoot, agent, { remove, dryRun }) {
   installManagedSkillDir(skillsRoot, {
     name: USAGE_SKILL_NAME,
     source: USAGE_SKILL_SRC,
-    markerData: USAGE_SKILL_MARKER_DATA,
+    identity: USAGE_SKILL_IDENTITY,
     replacements: {
       "{{USAGE_CLI_PATH}}": fwd(RUNTIME.usageCli),
       "{{USAGE_AGENT}}": agent,

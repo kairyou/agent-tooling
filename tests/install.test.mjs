@@ -92,13 +92,16 @@ test("installer installs Claude usage as a managed local skill", () => {
   const skill = readFileSync(join(skillDir, "SKILL.md"), "utf8");
   assert.match(skill, /node "[^"]*runtime with spaces\/dist\/usage\/cli\.mjs" --agent claude/);
   assert.match(skill, /Never run `npx`/);
-  assert.equal(
-    JSON.parse(readFileSync(join(skillDir, ".agent-tools-managed.json"), "utf8")).capability,
-    "usage"
-  );
+  assert.equal(existsSync(join(skillDir, ".agent-tools-managed.json")), false);
+  const state = JSON.parse(readFileSync(join(runtime, "install-state.json"), "utf8"));
+  const managed = Object.values(state.artifacts);
+  assert.equal(managed.length, 1);
+  assert.equal(managed[0].capability, "usage");
+  assert.match(managed[0].sha256, /^[a-f0-9]{64}$/);
 
   runInstall([...args, "--uninstall"], env);
   assert.equal(existsSync(skillDir), false);
+  assert.equal(existsSync(join(runtime, "install-state.json")), false);
 });
 
 test("usage install refuses to overwrite an unmanaged skill", () => {
@@ -116,6 +119,26 @@ test("usage install refuses to overwrite an unmanaged skill", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Refusing to overwrite existing unowned skill directory/);
   assert.equal(readFileSync(join(skillDir, "SKILL.md"), "utf8"), "user-owned\n");
+});
+
+test("usage install preserves a managed skill modified by the user", () => {
+  const temp = mkdtempSync(join(tmpdir(), "agent-tools-install-"));
+  const runtime = join(temp, "runtime");
+  const skillsDir = join(temp, "skills");
+  const skillFile = join(skillsDir, "at-usage", "SKILL.md");
+  const args = ["usage", "-a", "claude", "--claude-skills-dir", skillsDir];
+  const env = { AGENT_TOOLS_HOME: runtime };
+  runInstall(args, env);
+  writeFileSync(skillFile, "user customization\n");
+
+  const update = runInstallRaw(args, env);
+  assert.equal(update.status, 1);
+  assert.match(update.stderr, /Refusing to overwrite modified managed skill directory/);
+  assert.equal(readFileSync(skillFile, "utf8"), "user customization\n");
+
+  runInstall([...args, "--uninstall"], env);
+  assert.equal(readFileSync(skillFile, "utf8"), "user customization\n");
+  assert.equal(existsSync(join(runtime, "install-state.json")), false);
 });
 
 test("installer wires and unwires opencode usage plugins while preserving TUI config", () => {
