@@ -24,7 +24,9 @@ npx -y skills@latest add kairyou/agent-tools --skill <name...> -g -y
 npx -y skills@latest add kairyou/agent-tools --skill at-commit -g -y
 ```
 
-- 用法: `/at-commit [<语言>]` — 指定 commit description 的语言(Conventional Commits 语法部分保持英文)
+用法:
+
+- `/at-commit [<语言>]` — 指定 commit description 的语言(Conventional Commits 语法部分保持英文)
 
 ### at-review
 
@@ -34,7 +36,9 @@ npx -y skills@latest add kairyou/agent-tools --skill at-commit -g -y
 npx -y skills@latest add kairyou/agent-tools --skill at-review -g -y
 ```
 
-- 用法: `/at-review [--fix] [<pr|分支|路径>]` — 输出审查结果; 加 `--fix` 则同时应用修复
+用法:
+
+- `/at-review [--fix] [<pr|分支|路径>]` — 输出审查结果; 加 `--fix` 则同时应用修复
 
 ### at-simplify
 
@@ -44,7 +48,9 @@ npx -y skills@latest add kairyou/agent-tools --skill at-review -g -y
 npx -y skills@latest add kairyou/agent-tools --skill at-simplify -g -y
 ```
 
-- 用法: `/at-simplify [<pr|分支|路径>]`
+用法:
+
+- `/at-simplify [<pr|分支|路径>]`
 
 ### at-zentao
 

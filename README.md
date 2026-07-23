@@ -26,7 +26,9 @@ Generate a Conventional Commits message from staged changes and wait for user co
 npx -y skills@latest add kairyou/agent-tools --skill at-commit -g -y
 ```
 
-- Usage: `/at-commit [<language>]` — language for the commit description (Conventional Commits tokens stay in English)
+Usage:
+
+- `/at-commit [<language>]` — language for the commit description (Conventional Commits tokens stay in English)
 
 ### at-review
 
@@ -36,7 +38,9 @@ Review changes for correctness bugs, regressions, convention violations, and hig
 npx -y skills@latest add kairyou/agent-tools --skill at-review -g -y
 ```
 
-- Usage: `/at-review [--fix] [<pr|branch|path>]` — reports findings; `--fix` also applies them
+Usage:
+
+- `/at-review [--fix] [<pr|branch|path>]` — reports findings; `--fix` also applies them
 
 ### at-simplify
 
@@ -46,7 +50,9 @@ Refactor changes to reduce duplication, lower complexity, and improve code quali
 npx -y skills@latest add kairyou/agent-tools --skill at-simplify -g -y
 ```
 
-- Usage: `/at-simplify [<pr|branch|path>]`
+Usage:
+
+- `/at-simplify [<pr|branch|path>]`
 
 ### at-zentao
 
