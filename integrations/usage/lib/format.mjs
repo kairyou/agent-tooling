@@ -4,6 +4,8 @@
 
 import { newApiQuotaScale, providerUsageDays } from "./config.mjs";
 
+const ONE_API_HARD_LIMIT_SENTINEL_USD = 1_000_000;
+
 export function pickNumber(obj, keys) {
   for (const key of keys) {
     const value = obj?.[key];
@@ -112,15 +114,34 @@ export async function formatQuota(data) {
   return keys ? `received (${keys})` : `checked ${unit}`;
 }
 
-export async function formatNewApiTokenLine(data) {
+export function newApiTokenQuota(data) {
   const root = usageRoot(data);
   const unlimited = root?.unlimited_quota === true || root?.unlimitedQuota === true;
-  const quota = pickNumber(root, ["quota", "limit", "total_quota", "totalQuota"]);
-  const used = pickNumber(root, ["used_quota", "usedQuota", "used"]);
-  let remaining = pickNumber(root, ["remain_quota", "remainQuota", "remaining", "balance"]);
+  const quota = pickNumber(root, [
+    "quota",
+    "limit",
+    "total_quota",
+    "totalQuota",
+    "total_granted",
+    "totalGranted",
+  ]);
+  const used = pickNumber(root, ["used_quota", "usedQuota", "used", "total_used", "totalUsed"]);
+  let remaining = pickNumber(root, [
+    "remain_quota",
+    "remainQuota",
+    "remaining",
+    "balance",
+    "total_available",
+    "totalAvailable",
+  ]);
   if (remaining === undefined && quota !== undefined && used !== undefined) {
     remaining = Math.max(0, quota - used);
   }
+  return { unlimited, quota, used, remaining };
+}
+
+export async function formatNewApiTokenLine(data) {
+  const { unlimited, quota, used, remaining } = newApiTokenQuota(data);
 
   if (!unlimited && quota === undefined && used === undefined && remaining === undefined) {
     throw new Error("NewAPI token usage payload has no quota fields");
@@ -128,7 +149,7 @@ export async function formatNewApiTokenLine(data) {
 
   const parts = [];
   if (unlimited) parts.push("unlimited");
-  if (remaining !== undefined) parts.push(`balance ${await formatNewApiQuota(remaining)}`);
+  if (!unlimited && remaining !== undefined) parts.push(`balance ${await formatNewApiQuota(remaining)}`);
   if (used !== undefined && quota !== undefined) {
     parts.push(`used ${await formatNewApiQuota(used)}/${await formatNewApiQuota(quota)}`);
   } else if (used !== undefined) {
@@ -158,7 +179,60 @@ export function formatOpenRouterLine(data) {
 }
 
 export function formatOneApiBillingLine(limit, used) {
+  if (!hasSpendableOneApiLimit(limit)) return `used ${formatMoney(used)}`;
   return `balance ${formatMoney(Math.max(0, limit - used))} | used ${formatMoney(used)}/${formatMoney(limit)}`;
+}
+
+export function hasSpendableOneApiLimit(limit) {
+  return Number.isFinite(limit) && limit >= 0 && limit < ONE_API_HARD_LIMIT_SENTINEL_USD;
+}
+
+function effectiveClaudeCodeHubWindow(root, suffix) {
+  const keyLimit = pickNumber(root, [`keyLimit${suffix}Usd`]);
+  if (keyLimit !== undefined && keyLimit > 0) {
+    return { limit: keyLimit, used: pickNumber(root, [`keyCurrent${suffix}Usd`]) };
+  }
+  const userLimit = pickNumber(root, [`userLimit${suffix}Usd`]);
+  return {
+    limit: userLimit !== undefined && userLimit > 0 ? userLimit : undefined,
+    used: pickNumber(root, [`userCurrent${suffix}Usd`]),
+  };
+}
+
+function earliestDate(...values) {
+  return values
+    .map((value) => ({ value, time: Date.parse(value) }))
+    .filter((entry) => entry.value && Number.isFinite(entry.time))
+    .sort((left, right) => left.time - right.time)[0]?.value;
+}
+
+export function formatClaudeCodeHubLine(data) {
+  const root = usageRoot(data);
+  const windows = [
+    ["5h", "5h"],
+    ["D", "Daily"],
+    ["W", "Weekly"],
+    ["M", "Monthly"],
+    ["T", "Total"],
+  ];
+  const parts = [];
+
+  for (const [label, suffix] of windows) {
+    const { limit, used } = effectiveClaudeCodeHubWindow(root, suffix);
+    if (limit !== undefined && used !== undefined) {
+      parts.push(`${label} ${formatMoney(used)}/${formatMoney(limit)}`);
+    }
+  }
+
+  if (parts.length === 0) {
+    const totalUsed = pickNumber(root, ["keyCurrentTotalUsd", "userCurrentTotalUsd"]);
+    if (totalUsed !== undefined) parts.push(`used ${formatMoney(totalUsed)}`);
+  }
+
+  const expires = shortDate(earliestDate(root?.expiresAt, root?.userExpiresAt));
+  if (expires) parts.push(`Exp ${expires}`);
+  if (parts.length === 0) throw new Error("Claude Code Hub quota payload has no quota fields");
+  return parts.join(" | ");
 }
 
 function formatQuotaLimitedLine(root) {

@@ -245,6 +245,27 @@ test("a broken custom route is skipped and built-ins still answer", async () => 
   });
 });
 
+test("provider usage accepts New API total quota field names", async () => {
+  await withServer((req, res) => {
+    if (req.url === "/api/usage/token/") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        data: {
+          total_granted: 10_000_000,
+          total_used: 2_500_000,
+          total_available: 7_500_000,
+        },
+      }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  }, async (base) => {
+    const payload = await runProvider({ baseUrl: `${base}/v1`, preset: "new-api" });
+    assert.equal(payload.systemMessage, "balance $15.0 | used $5.0/$20.0");
+  });
+});
+
 test("provider usage reads One API billing with the relay API key", async () => {
   const seen = [];
   await withServer((req, res) => {
@@ -270,6 +291,78 @@ test("provider usage reads One API billing with the relay API key", async () => 
   });
 });
 
+test("OneHub and DoneHub presets reuse One API billing", async () => {
+  await withServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/dashboard/billing/subscription") {
+      res.end(JSON.stringify({ hard_limit_usd: 20 }));
+      return;
+    }
+    if (req.url === "/v1/dashboard/billing/usage") {
+      res.end(JSON.stringify({ total_usage: 500 }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  }, async (base) => {
+    for (const preset of ["one-hub", "done-hub"]) {
+      const payload = await runProvider({ baseUrl: `${base}/v1`, preset });
+      assert.equal(payload.systemMessage, "balance $15.0 | used $5.0/$20.0");
+    }
+  });
+});
+
+test("One API sentinel hard limits are not reported as spendable balance", async () => {
+  await withServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/dashboard/billing/subscription") {
+      res.end(JSON.stringify({ hard_limit_usd: 1_000_000 }));
+      return;
+    }
+    if (req.url === "/v1/dashboard/billing/usage") {
+      res.end(JSON.stringify({ total_usage: 500 }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  }, async (base) => {
+    const payload = await runProvider({ baseUrl: `${base}/v1`, preset: "one-api" });
+    assert.equal(payload.systemMessage, "used $5.0");
+  });
+});
+
+test("provider usage auto-detects Claude Code Hub self-service quota", async () => {
+  const seen = [];
+  await withServer((req, res) => {
+    seen.push({ url: req.url, authorization: req.headers.authorization });
+    if (req.url === "/api/v1/me/quota") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        keyLimit5hUsd: 10,
+        keyCurrent5hUsd: 2.1,
+        keyLimitDailyUsd: 0,
+        keyCurrentDailyUsd: 4,
+        userLimitDailyUsd: 20,
+        userCurrentDailyUsd: 8,
+        expiresAt: "2026-09-30T00:00:00.000Z",
+        userExpiresAt: "2026-08-31T00:00:00.000Z",
+      }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  }, async (base) => {
+    const payload = await runProvider({ baseUrl: `${base}/v1`, preset: "auto" });
+    assert.equal(payload.systemMessage, "5h $2.1/$10.0 | D $8.0/$20.0 | Exp 08-31");
+    assert.deepEqual(seen, [
+      { url: "/v1/usage?days=30", authorization: "Bearer test-key" },
+      { url: "/api/usage/token/", authorization: "Bearer test-key" },
+      { url: "/v1/dashboard/billing/subscription", authorization: "Bearer test-key" },
+      { url: "/api/v1/me/quota", authorization: "Bearer test-key" },
+    ]);
+  });
+});
+
 test("provider usage fails open when no compatible usage endpoint exists", async () => {
   const seen = [];
   await withServer((req, res) => {
@@ -283,6 +376,7 @@ test("provider usage fails open when no compatible usage endpoint exists", async
       "/v1/usage?days=30",
       "/api/usage/token/",
       "/v1/dashboard/billing/subscription",
+      "/api/v1/me/quota",
     ]);
   });
 });

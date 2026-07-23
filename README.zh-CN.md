@@ -110,8 +110,9 @@ npx -y @kairyou/agent-tools@latest statusline -a claude
 
 面向使用 API 中转的场景: 在 agent 内直接显示中转网关的余额/额度, 按量付费或
 有套餐限额时, 随时知道花了多少, 还剩多少, 不用切出去登录网关后台.
-支持 Sub2API, One API, New API 与 OpenRouter 提供的 API Key 用量接口.
-具体兼容性取决于网关版本及其是否开放相应接口.
+支持 Sub2API, One API (包括 OneHub 与 DoneHub), New API 与 Claude Code Hub
+等中转程序提供的 API Key 用量接口, 也支持 OpenRouter 平台. 具体兼容性取决于
+网关版本及其是否开放相应接口.
 
 ```bash
 npx -y @kairyou/agent-tools@latest usage -a claude codex opencode
@@ -136,7 +137,9 @@ provider 的 `base_url` 和密钥; Claude Code: 读取 `ANTHROPIC_BASE_URL` 与
 ```jsonc
 {
   "providerUsage": {
-    "preset": "auto", // auto | sub2api | one-api | new-api | openrouter | <自定义 route id>
+    // auto | sub2api | openai-compatible | one-api | one-hub |
+    // done-hub | new-api | claude-code-hub | openrouter | <自定义 route id>
+    "preset": "auto",
     "days": 30,       // 统计最近多少天的消耗
     "debug": false    // true: 探测过程写入 ~/.agent-tools/logs/usage-debug.log
   }
@@ -149,14 +152,20 @@ provider 的 `base_url` 和密钥; Claude Code: 读取 `ANTHROPIC_BASE_URL` 与
 显示效果示例:
 
 ```text
-# 中转套餐额度.
+# 套餐限额 (sub2api / openai-compatible).
 D $0.0/$100 | W $0.0/$300 | Exp 07-08
 
-# 钱包余额.
+# 多窗口限额 (claude-code-hub).
+5h $2.1/$10.0 | D $8.0/$20.0 | T $19.0/$100 | Exp 08-31
+
+# 余额与用量 (one-api / one-hub / done-hub / new-api / openrouter).
+balance $15.0 | used $5.0/$20.0
+
+# 钱包与近期消耗 (sub2api).
 balance $362 | today $61.7 | 30d $566
 ```
 
-字段含义: `D/W/M` 是日/周/月套餐消耗与上限, `Exp` 是套餐到期日,
+字段含义: `5h/D/W/M/T` 是 5 小时/日/周/月/总消耗与上限, `Exp` 是套餐到期日,
 `balance` 是钱包余额, `today` / `30d` 是今日与近 30 天 API 消耗.
 
 #### 自定义网关路由

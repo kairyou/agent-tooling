@@ -24,9 +24,12 @@ import {
   usageRoot,
   hasV1UsageFields,
   formatQuota,
+  newApiTokenQuota,
   formatNewApiTokenLine,
   formatOneApiBillingLine,
+  hasSpendableOneApiLimit,
   formatOpenRouterLine,
+  formatClaudeCodeHubLine,
 } from "./format.mjs";
 import { readRouteCache } from "./cache.mjs";
 
@@ -66,13 +69,7 @@ async function fetchNewApiTokenUsage(context) {
     key: context.key,
     name: "New API token usage",
   });
-  const root = usageRoot(json);
-  const quota = pickNumber(root, ["quota", "limit", "total_quota", "totalQuota"]);
-  const used = pickNumber(root, ["used_quota", "usedQuota", "used"]);
-  let remaining = pickNumber(root, ["remain_quota", "remainQuota", "remaining", "balance"]);
-  if (remaining === undefined && quota !== undefined && used !== undefined) {
-    remaining = Math.max(0, quota - used);
-  }
+  const { quota, used, remaining } = newApiTokenQuota(json);
   const scale = await newApiQuotaScale();
   const quotaForWarning = scale ? quota / scale : quota;
   const usedForWarning = scale ? used / scale : used;
@@ -109,13 +106,16 @@ async function fetchOneApiBillingUsage(context) {
     throw new Error("One API billing payload has no quota fields");
   }
   const used = usageCents / 100;
+  const spendableLimit = hasSpendableOneApiLimit(limit);
   const normalized = {
-    mode: "quota_limited",
-    quota: {
-      limit,
-      used,
-      remaining: Math.max(0, limit - used),
-    },
+    mode: spendableLimit ? "quota_limited" : "unrestricted",
+    ...(spendableLimit ? {
+      quota: {
+        limit,
+        used,
+        remaining: Math.max(0, limit - used),
+      },
+    } : { used }),
     unit: "USD",
     source: "oneapi-billing",
     raw: { subscription, usage },
@@ -125,6 +125,24 @@ async function fetchOneApiBillingUsage(context) {
     "oneapi-billing",
     formatOneApiBillingLine(limit, used),
     normalized
+  );
+}
+
+// Claude Code Hub exposes self-scoped quota windows to the same API key used
+// for model requests. The endpoint accepts the existing Bearer authentication.
+async function fetchClaudeCodeHubUsage(context) {
+  const base = cleanBaseUrl(context.baseUrl)
+    .replace(/\/api\/v1$/i, "")
+    .replace(/\/v1$/i, "");
+  const json = await requestJson(joinUrl(base, "/api/v1/me/quota"), {
+    key: context.key,
+    name: "Claude Code Hub quota",
+  });
+  return usageResult(
+    context,
+    "claude-code-hub",
+    formatClaudeCodeHubLine(json),
+    json
   );
 }
 
@@ -172,6 +190,11 @@ const USAGE_ROUTES = {
     id: "openrouter",
     path: "/api/v1/key",
     run: fetchOpenRouterUsage,
+  },
+  "claude-code-hub": {
+    id: "claude-code-hub",
+    path: "/api/v1/me/quota",
+    run: fetchClaudeCodeHubUsage,
   },
 };
 
@@ -256,7 +279,8 @@ async function routeRegistry() {
   return registry;
 }
 
-// Presets select API-key usage protocols, not hosted gateway brands.
+// Presets primarily select API-key usage protocols. Brand aliases map to a
+// shared protocol when the upstream gateway exposes the same endpoints.
 async function usageRouteIds(context) {
   const preset = await usagePreset();
   const routes = {
@@ -264,7 +288,10 @@ async function usageRouteIds(context) {
     "openai-compatible": ["v1-usage"],
     "new-api": ["newapi-token"],
     "one-api": ["oneapi-billing"],
+    "one-hub": ["oneapi-billing"],
+    "done-hub": ["oneapi-billing"],
     "openrouter": ["openrouter"],
+    "claude-code-hub": ["claude-code-hub"],
   };
   if (routes[preset]) return routes[preset];
 
@@ -275,7 +302,7 @@ async function usageRouteIds(context) {
   const customIds = (await customRoutes()).map((route) => route.id);
   const builtinIds = hostIncludes(context.baseUrl, "openrouter.ai")
     ? ["openrouter"]
-    : ["v1-usage", "newapi-token", "oneapi-billing"];
+    : ["v1-usage", "newapi-token", "oneapi-billing", "claude-code-hub"];
   return [...new Set([...customIds, ...builtinIds])];
 }
 

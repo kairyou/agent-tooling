@@ -115,9 +115,10 @@ compatibility and configuration.
 For API relay / gateway setups: shows the relay's balance / quota inside the
 agent, so when you pay per use or have plan limits you always know how much you
 have spent and how much is left — without opening the gateway console.
-Works with API-key usage endpoints exposed by Sub2API, One API, New API, and
-OpenRouter. Compatibility depends on the gateway version and whether the
-corresponding usage endpoint is enabled.
+Works with API-key usage endpoints exposed by relay software such as Sub2API,
+One API (including OneHub and DoneHub), New API, and Claude Code Hub. It also
+supports the OpenRouter platform. Compatibility depends on the gateway version
+and whether the corresponding usage endpoint is enabled.
 
 ```bash
 npx -y @kairyou/agent-tools@latest usage -a claude codex opencode
@@ -144,7 +145,9 @@ endpoint and key — and tune `providerUsage` in `~/.agent-tools/config.jsonc`:
 ```jsonc
 {
   "providerUsage": {
-    "preset": "auto", // auto | sub2api | one-api | new-api | openrouter | <custom-route-id>
+    // auto | sub2api | openai-compatible | one-api | one-hub |
+    // done-hub | new-api | claude-code-hub | openrouter | <custom-route-id>
+    "preset": "auto",
     "days": 30,       // how many recent days of spend to count
     "debug": false    // true: log probes to ~/.agent-tools/logs/usage-debug.log
   }
@@ -158,15 +161,22 @@ custom route id is also accepted.
 Output examples:
 
 ```text
-# Relay plan quota.
+# Plan limits (sub2api / openai-compatible).
 D $0.0/$100 | W $0.0/$300 | Exp 07-08
 
-# Wallet balance.
+# Multi-window limits (claude-code-hub).
+5h $2.1/$10.0 | D $8.0/$20.0 | T $19.0/$100 | Exp 08-31
+
+# Balance and usage (one-api / one-hub / done-hub / new-api / openrouter).
+balance $15.0 | used $5.0/$20.0
+
+# Wallet and recent spend (sub2api).
 balance $362 | today $61.7 | 30d $566
 ```
 
-Fields: `D/W/M` are daily/weekly/monthly spend against plan limits; `Exp` is
-the plan expiry; `balance` is wallet credit; `today` and `30d` are API spend.
+Fields: `5h/D/W/M/T` are five-hour/daily/weekly/monthly/total spend against
+limits; `Exp` is the plan expiry; `balance` is wallet credit; `today` and `30d`
+are API spend.
 
 #### Custom gateway routes
 
