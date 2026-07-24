@@ -15,6 +15,7 @@
   },
   "files": [
     "config.default.jsonc",
+    "docs/",
     "dist/",
     "integrations/",
     "scripts/",

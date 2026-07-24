@@ -1,0 +1,20 @@
+# 仓库结构
+
+```text
+agent-tools/
+├── .claude-plugin/    # Claude Code/plugin 生态的 manifest.
+├── .codex-plugin/     # Codex plugin manifest.
+├── integrations/      # 可安装的 capability, 一个一目录.
+│   ├── statusline/    # Agent 状态栏: 分支, 模型, 用量.
+│   ├── usage/         # Provider 余额/额度显示.
+│   └── vision/        # 跨模型识图.
+├── skills/            # 可复用的 Agent Skills.
+│   ├── workflow/      # 工作流类 skills.
+│   │   ├── at-commit/   # 生成 Conventional Commits message.
+│   │   ├── at-review/   # 审查改动中的 bug 与回归风险.
+│   │   └── at-simplify/ # 减少改动中的冗余和复杂度.
+│   └── integrations/  # 对接外部系统的 skills.
+│       └── at-zentao/   # 禅道 bug/task 修复工作流.
+├── docs/              # 高级指南和贡献者参考.
+└── scripts/           # 安装, 同步, 校验和仓库维护脚本.
+```

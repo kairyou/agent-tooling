@@ -102,8 +102,9 @@ The installer writes `statusLine` to `~/.claude/settings.json`. Example output:
 # Pick and order the fields via statusline.fields in ~/.agent-tools/config.jsonc:
 ⎇ main | Opus 4.8 | 5h 7% ⟳2h54m | w 41% ⟳3d1h
 
-# With a compatible API relay, its quota info is shown instead, e.g.:
+# With a compatible API relay, quota info is shown too:
 ⎇ main | Opus 4.8 | balance $362 | today $61.7 | 30d $566
+
 ```
 
 Here `5h` and `w` are Claude's rolling usage windows and `⟳` is the reset
@@ -112,35 +113,25 @@ compatibility and configuration.
 
 ### Provider usage
 
-For API relay / gateway setups: shows the relay's balance / quota inside the
-agent, so when you pay per use or have plan limits you always know how much you
-have spent and how much is left — without opening the gateway console.
-Works with API-key usage endpoints exposed by relay software such as Sub2API,
-One API (including OneHub and DoneHub), New API, and Claude Code Hub. It also
-supports the OpenRouter platform. Compatibility depends on the gateway version
-and whether the corresponding usage endpoint is enabled.
+Shows API relay / gateway balance and quota inside the agent. Supports Sub2API,
+One API (including OneHub and DoneHub), New API, Claude Code Hub, and OpenRouter;
+compatibility depends on the gateway version and enabled usage endpoints.
 
 ```bash
 npx -y @kairyou/agent-tools@latest usage -a claude codex opencode
 ```
 
-- **Claude Code** — installs the `at-usage` skill into `~/.claude/skills`; invoke
-  `/at-usage` to show the current usage in the conversation.
-- **Codex** — adds a hook to `UserPromptSubmit` and `Stop` in `~/.codex/hooks.json`
-  and the `at-usage` skill to `~/.agents/skills`. Run `/hooks` inside Codex once
-  to approve it. The Codex CLI displays hook output; some clients (e.g. Paseo)
-  currently do not — invoke `$at-usage` there.
-- **OpenCode** — adds server and TUI plugins: usage refreshes when the session
-  goes idle and shows as a toast, and `/at-usage` shows the latest cached value.
-  Restart opencode after installing or updating.
+- **Claude Code** — invoke `/at-usage` to show the current usage.
+- **Codex** — run `/hooks` once after installation to approve it. The Codex CLI
+  displays usage automatically; clients that hide hook output can use `$at-usage`.
+- **OpenCode** — usage refreshes when the session goes idle and appears as a
+  toast; `/at-usage` shows it on demand. Restart opencode after installing or updating.
 
-The relay endpoint is auto-discovered — Codex: the active provider's `base_url`
-and key from `~/.codex/config.toml` / `auth.json`; Claude Code:
-`ANTHROPIC_BASE_URL` plus `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`.
-Official (non-relay) endpoints are skipped. If it reports
-`Provider usage is unavailable.`, point it at the relay explicitly —
-`PROVIDER_USAGE_BASE_URL` / `PROVIDER_USAGE_API_KEY` env vars override the
-endpoint and key — and tune `providerUsage` in `~/.agent-tools/config.jsonc`:
+The relay endpoint is auto-discovered from the existing Codex and Claude Code
+configuration; official (non-relay) endpoints are skipped. If it reports
+`Provider usage is unavailable.`, set `PROVIDER_USAGE_BASE_URL` and
+`PROVIDER_USAGE_API_KEY` to override the endpoint and key. Configure
+`providerUsage` in `~/.agent-tools/config.jsonc` only when needed:
 
 ```jsonc
 {
@@ -155,8 +146,8 @@ endpoint and key — and tune `providerUsage` in `~/.agent-tools/config.jsonc`:
 ```
 
 Keep `preset` set to `auto` for automatic detection. Select a specific protocol
-only when you know which usage endpoint the gateway exposes; a configured
-custom route id is also accepted.
+only when you know which usage endpoint the gateway exposes; a configured custom
+route id is also accepted.
 
 Output examples:
 
@@ -175,61 +166,17 @@ balance $362 | today $61.7 | 30d $566
 ```
 
 Fields: `5h/D/W/M/T` are five-hour/daily/weekly/monthly/total spend against
-limits; `Exp` is the plan expiry; `balance` is wallet credit; `today` and `30d`
-are API spend.
+limits; `Exp` is the plan expiry; `balance` is wallet credit; `used` is consumed
+credit; `today` and `30d` are today's and the last 30 days' API spend.
 
 #### Custom gateway routes
 
-For gateways the built-in probes cannot reach (e.g. cookie-authenticated
-relays), write your own route module and declare it in `providerUsage.routes`
-(paths resolve against `~/.agent-tools`). Declared routes are probed first;
-setting `"preset"` to a route id selects it directly.
-
-```jsonc
-{
-  "providerUsage": {
-    "routes": [
-      "custom/my-gateway.mjs",
-      "custom/another-gateway.mjs"
-    ],
-    "myGateway": { "username": "me", "password": "..." }
-  }
-}
-```
-
-```js
-// ~/.agent-tools/custom/my-gateway.mjs
-export const meta = { id: "my-gateway" }; // optional; id defaults to the file name
-
-export async function run(context, { requestJson, agentConfig }) {
-  // context: { baseUrl, key, providerName, provider, label }
-  const { myGateway = {} } = await agentConfig(); // the providerUsage object; custom keys welcome
-
-  // Tip: save the token to a file (e.g. under ~/.agent-tools/cache) and reuse
-  // it; log in again only when a query fails with it (e.g. 401), then save the
-  // new token.
-  const login = await fetch(`${context.baseUrl}/api/user/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: myGateway.username, password: myGateway.password }),
-  });
-  const session = await login.json();
-
-  // Plain fetch works too; custom headers: authorization, cookie, ...
-  const me = await requestJson(`${context.baseUrl}/api/user/self`, {
-    headers: { authorization: `Bearer ${session?.data?.accessToken}` },
-  });
-  return { text: `balance ¥${me?.data?.balance}` };
-}
-```
-
-`text` is a free-form string; return `{ text }` on success, throw to fall
-through to the next route (with `providerUsage.debug` enabled, failures are
-logged to `~/.agent-tools/logs/usage-debug.log`).
+Gateways not covered by the built-in probes can use a custom route. See
+[Custom gateway routes](docs/en/custom-gateway-routes.md).
 
 ### Vision (cross-model image understanding)
 
-Lets a main model that cannot see images ask a multimodal model specific questions about an image (local path or http(s) URL) and reason on from the answers. Typical uses: reading error screenshots, implementing UI from design mockups, locating the glitch in a bug-report screenshot. One installer capability bundling three parts: the `inspect_image` MCP stdio server, the `at-vision` policy skill, and a human diagnostic CLI.
+Lets a main model that cannot see images use a multimodal model to analyze error screenshots, implement UI from design mockups, and inspect bug-report screenshots.
 
 #### Install
 
@@ -237,10 +184,7 @@ Lets a main model that cannot see images ask a multimodal model specific questio
 npx -y @kairyou/agent-tools@latest vision -a claude codex opencode
 ```
 
-Uninstalling keeps your vision provider config. The installer registers the
-`inspect_image` MCP server for each agent (Claude Code: `~/.claude.json`; Codex:
-`~/.codex/config.toml`; OpenCode: `opencode.json`) and installs the `at-vision`
-skill into the agent's skills directory.
+Uninstalling keeps your vision provider config by default.
 
 #### Configure
 
@@ -252,20 +196,19 @@ skill into the agent's skills directory.
     "provider": "openai-compatible",       // or "anthropic-compatible"
     "baseUrl": "https://gateway.example.com/v1",  // anthropic-compatible: gateway root, /v1/messages is appended
     "model": "internal-vlm",
-    "apiKey": { "env": "OPENAI_API_KEY" }  // reuse an existing env var, or the key itself
+    "apiKey": { "env": "OPENAI_API_KEY" }  // read from the OPENAI_API_KEY environment variable
     // , "timeoutMs": 30000, "maxImageBytes": 20971520, "maxOutputTokens": 8192
     // , "maxConcurrentRequests": 2, "maxRequestsPerMinute": 30
   }
 }
 ```
 
-`apiKey` takes the key itself, or `{ "env": "VARIABLE_NAME" }` to reuse an existing environment variable; omit it if your gateway needs no key.
-The runtime sends provider requests directly, so the API key never enters a shell command; user-facing errors redact it as `***`. `maxConcurrentRequests` and `maxRequestsPerMinute` are shared across local MCP and CLI processes.
-Image bytes are streamed into the provider's base64 JSON request without recompression; URL inputs use a private temporary file that is removed after each request.
+`apiKey` can be a key string such as `"apiKey": "sk-..."`, or an environment variable reference such as `{ "env": "OPENAI_API_KEY" }`. Omit it if your gateway requires no key. Prefer an environment variable to avoid storing the key in the config file.
 
 #### Use
 
-Pass images as file paths or URLs in your message. The agent prefers the `inspect_image` MCP tool and falls back to the installed local vision CLI when its model gateway cannot invoke MCP namespace tools. Do not paste screenshots directly: with a non-vision main model the paste fails with an API 400 before any tool runs — save the image and give its path instead.
+Pass a local image path or URL in your message. If the main model cannot accept
+pasted images, save the image first and pass its file path instead.
 
 To diagnose the provider setup or test recognition quality manually:
 
@@ -282,25 +225,7 @@ To run directly from the repository, replace the npm package name with
 npx -y github:kairyou/agent-tools usage -a codex
 ```
 
-## Repository Structure
-
-```text
-agent-tools/
-├── .claude-plugin/    # Claude Code/plugin ecosystem manifest.
-├── .codex-plugin/     # Codex plugin manifest.
-├── integrations/      # Installable capabilities, one directory each.
-│   ├── statusline/    # Agent status line: branch, model, usage.
-│   ├── usage/         # Provider balance / quota display.
-│   └── vision/        # Cross-model image understanding.
-├── skills/            # Reusable Agent Skills.
-│   ├── workflow/      # Workflow-oriented skills.
-│   │   ├── at-commit/   # Conventional Commit message skill.
-│   │   ├── at-review/   # Review changes for bugs and regressions.
-│   │   └── at-simplify/ # Reduce complexity and duplication in changes.
-│   └── integrations/  # Skills that integrate external systems.
-│       └── at-zentao/   # ZenTao bug/task fixing workflow.
-└── scripts/           # Install, sync, validation, and maintenance scripts.
-```
+Contributors can see the [repository structure](docs/en/repository-structure.md).
 
 ## FAQ
 
@@ -310,8 +235,11 @@ agent-tools/
 PromptScript agent does not support global installation. It does not affect
 other agents and can be ignored. See [`skills` issue #1352](https://github.com/vercel-labs/skills/issues/1352).
 
-## References
+## Acknowledgements
 
-- [OpenCommit](https://github.com/di-sukharev/opencommit)
-- [GitLens](https://github.com/gitkraken/vscode-gitlens)
-- [claude-code-system-prompts](https://github.com/Piebald-AI/claude-code-system-prompts)
+- `at-commit` draws on commit-message generation ideas from
+  [OpenCommit](https://github.com/di-sukharev/opencommit) and
+  [GitLens](https://github.com/gitkraken/vscode-gitlens), reimplemented for an
+  Agent Skill workflow.
+- `at-review` and `at-simplify` draw on the corresponding workflows in
+  [claude-code-system-prompts](https://github.com/Piebald-AI/claude-code-system-prompts).
