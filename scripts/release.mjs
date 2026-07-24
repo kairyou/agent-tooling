@@ -78,12 +78,14 @@ function run(command, args, { label, onFailure } = {}) {
 }
 
 function runNpm(args) {
-  const npmExecPath = process.env.npm_execpath;
-  if (npmExecPath) {
-    run(process.execPath, [npmExecPath, ...args], { label: `npm ${args.join(" ")}` });
-  } else {
-    run(process.platform === "win32" ? "npm.cmd" : "npm", args);
-  }
+  // npm run sets npm_execpath. When invoked directly (`node scripts/...`), find
+  // the bundled npm-cli.js next to node — spawning npm.cmd fails on Node 22+.
+  // Version-manager layouts may not have it there, so fall back to PATH.
+  const bundledNpm = path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+  const npmExecPath = process.env.npm_execpath || (fs.existsSync(bundledNpm) ? bundledNpm : undefined);
+  const command = npmExecPath ? process.execPath : "npm";
+  const commandArgs = npmExecPath ? [npmExecPath, ...args] : args;
+  run(command, commandArgs, { label: `npm ${args.join(" ")}` });
 }
 
 function printRecovery(commands) {
